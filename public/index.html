@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Rule34 Proxy API</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; background: #0a0a0f; color: #fff; }
+        .container { max-width: 600px; margin: 0 auto; }
+        h1 { color: #667eea; }
+        .endpoint { background: rgba(255,255,255,0.1); padding: 15px; margin: 10px 0; border-radius: 8px; }
+        code { background: rgba(255,255,255,0.2); padding: 4px 8px; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Rule34 Proxy API</h1>
+        <p>Serverless API for handling CORS and proxy requests.</p>
+
+        <div class="endpoint">
+            <h3>Proxy Endpoint</h3>
+            <code>GET /api/proxy?url=TARGET_URL</code>
+            <p>Proxies web requests with CORS headers and compression handling.</p>
+        </div>
+
+        <div class="endpoint">
+            <h3>Video Proxy Endpoint</h3>
+            <code>GET /api/video-proxy?url=VIDEO_URL</code>
+            <p>Streams video content with range request support.</p>
+        </div>
+
+        <p><strong>Status:</strong> <span id="status">Loading...</span></p>
+
+        <script>
+            // Test API availability
+            fetch('/api/proxy?url=https://httpbin.org/json')
+                .then(r => r.json())
+                .then(() => document.getElementById('status').textContent = 'API Online ✓')
+                .catch(() => document.getElementById('status').textContent = 'API Offline ✗');
+        </script>
+    </div>
+</body>
+</html>

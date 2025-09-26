@@ -1,4 +1,9 @@
 {
+  "functions": {
+    "api/*.js": {
+      "runtime": "@vercel/node"
+    }
+  },
   "headers": [
     {
       "source": "/api/(.*)",
