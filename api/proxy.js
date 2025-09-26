@@ -1,7 +1,7 @@
-import https from 'https';
-import zlib from 'zlib';
+const https = require('https');
+const zlib = require('zlib');
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
     // Set CORS headers
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -44,7 +44,6 @@ export default async function handler(req, res) {
 
         const proxyReq = https.get(targetUrl, options, (proxyRes) => {
             console.log(`Response status: ${proxyRes.statusCode}`);
-            console.log(`Response headers:`, proxyRes.headers);
 
             const chunks = [];
             proxyRes.on('data', (chunk) => chunks.push(chunk));
@@ -150,4 +149,4 @@ export default async function handler(req, res) {
             resolve();
         });
     });
-}
+};

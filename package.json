@@ -2,7 +2,6 @@
   "name": "rule34-vercel-backend",
   "version": "1.0.0",
   "description": "Vercel backend for Rule34 Mobile Downloader",
-  "type": "module",
   "scripts": {
     "dev": "vercel dev",
     "deploy": "vercel --prod"
