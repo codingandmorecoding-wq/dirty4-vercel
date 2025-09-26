@@ -1,0 +1,23 @@
+{
+  "name": "rule34-vercel-backend",
+  "version": "1.0.0",
+  "description": "Vercel backend for Rule34 Mobile Downloader",
+  "type": "module",
+  "scripts": {
+    "dev": "vercel dev",
+    "build": "echo 'No build step required'",
+    "deploy": "vercel --prod"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "vercel": "^33.0.0"
+  },
+  "keywords": [
+    "proxy",
+    "cors",
+    "vercel",
+    "serverless"
+  ],
+  "author": "",
+  "license": "MIT"
+}
