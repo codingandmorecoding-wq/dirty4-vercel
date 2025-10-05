@@ -1,9 +1,10 @@
 {
-  "functions": {
-    "api/*.js": {
-      "runtime": "nodejs18.x"
+  "build": {
+    "env": {
+      "VERCEL_DISABLE_DEPLOYMENT_PROTECTION": "true"
     }
   },
+  "public": true,
   "headers": [
     {
       "source": "/api/(.*)",

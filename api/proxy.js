@@ -1,7 +1,7 @@
-const https = require('https');
-const zlib = require('zlib');
+import https from 'https';
+import zlib from 'zlib';
 
-module.exports = function handler(req, res) {
+export default function handler(req, res) {
     // Set CORS headers first (before any other code)
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
