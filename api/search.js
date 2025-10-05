@@ -46,9 +46,9 @@ function searchHistorical(tags, page = 1, limit = 42) {
     return { results: [], total: 0, source: 'historical' };
   }
 
-  const tagList = tags.toLowerCase().split(/\s+/).filter(t => t.length > 0);
+  const queryLower = tags.toLowerCase().trim();
 
-  if (tagList.length === 0) {
+  if (!queryLower) {
     // No tags = return recent images
     const start = (page - 1) * limit;
     const results = searchIndex.images.slice(start, start + limit);
@@ -69,15 +69,23 @@ function searchHistorical(tags, page = 1, limit = 42) {
     };
   }
 
-  // Find images matching ALL tags (AND logic)
-  const matchingSets = tagList.map(tag => {
-    return new Set(searchIndex.tagIndex[tag] || []);
-  });
+  // Try the full query as a single tag first (for multi-word tags like "genshin impact")
+  let matchingIds = new Set(searchIndex.tagIndex[queryLower] || []);
 
-  // Intersection of all tag sets
-  let matchingIds = matchingSets[0];
-  for (let i = 1; i < matchingSets.length; i++) {
-    matchingIds = new Set([...matchingIds].filter(id => matchingSets[i].has(id)));
+  // If no results, try splitting into individual tags and use AND logic
+  if (matchingIds.size === 0) {
+    const tagList = queryLower.split(/\s+/).filter(t => t.length > 0);
+    const matchingSets = tagList.map(tag => {
+      return new Set(searchIndex.tagIndex[tag] || []);
+    });
+
+    // Intersection of all tag sets
+    if (matchingSets.length > 0) {
+      matchingIds = matchingSets[0];
+      for (let i = 1; i < matchingSets.length; i++) {
+        matchingIds = new Set([...matchingIds].filter(id => matchingSets[i].has(id)));
+      }
+    }
   }
 
   // Get image data for matching IDs
