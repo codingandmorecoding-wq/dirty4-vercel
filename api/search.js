@@ -190,21 +190,32 @@ export default async function handler(req, res) {
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);
 
-    // Unified mode: Search both sources and merge
+    // Unified mode: Search historical first, use Danbooru as fallback
     if (mode === 'unified' || mode === 'all') {
-      const [historicalData, danbooruData] = await Promise.all([
-        Promise.resolve(searchHistorical(tags, pageNum, Math.floor(limitNum * 0.7))), // 70% historical
-        searchDanbooru(tags, pageNum, Math.floor(limitNum * 0.3)) // 30% danbooru
-      ]);
+      const historicalData = searchHistorical(tags, pageNum, limitNum);
 
-      // Merge and interleave results for variety
-      const merged = [];
-      const maxLen = Math.max(historicalData.results.length, danbooruData.results.length);
-
-      for (let i = 0; i < maxLen; i++) {
-        if (historicalData.results[i]) merged.push(historicalData.results[i]);
-        if (danbooruData.results[i]) merged.push(danbooruData.results[i]);
+      // If historical has enough results, return those only
+      if (historicalData.results.length >= limitNum) {
+        return res.status(200).json({
+          posts: historicalData.results.slice(0, limitNum),
+          total: historicalData.total,
+          page: pageNum,
+          sources: {
+            historical: historicalData.total,
+            danbooru: 0
+          },
+          mode: 'unified'
+        });
       }
+
+      // If historical has some results but not enough, fill remaining with Danbooru
+      const remaining = limitNum - historicalData.results.length;
+      const danbooruData = await searchDanbooru(tags, pageNum, remaining);
+
+      const merged = [
+        ...historicalData.results,
+        ...danbooruData.results
+      ];
 
       return res.status(200).json({
         posts: merged.slice(0, limitNum),
