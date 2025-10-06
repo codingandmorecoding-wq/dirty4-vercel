@@ -1,5 +1,6 @@
 // 🔍 UNIFIED SEARCH API - Merges Danbooru + Historical Archive
 // Provides seamless search experience across all sources
+// Updated: 2025-10-06 - Fixed file extensions in search index
 
 import https from 'https';
 
