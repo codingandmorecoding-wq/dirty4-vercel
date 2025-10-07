@@ -145,6 +145,7 @@ async function searchDanbooru(tags, page = 1, limit = 20) {
               rating: post.rating || 'q',
               score: post.score || 0,
               created_at: post.created_at,
+              file_ext: post.file_ext || '',
               source: 'danbooru'
             })),
             total: posts.length,
