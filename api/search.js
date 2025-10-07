@@ -136,7 +136,15 @@ async function searchDanbooru(tags, page = 1, limit = 20) {
           const posts = JSON.parse(data);
           resolve({
             results: posts.map(post => ({
-              ...post,
+              id: post.id,
+              file_url: post.file_url || post.large_file_url,
+              preview_url: post.preview_file_url || post.file_url,
+              large_file_url: post.large_file_url || post.file_url,
+              tag_string: post.tag_string || '',
+              tag_string_artist: post.tag_string_artist || '',
+              rating: post.rating || 'q',
+              score: post.score || 0,
+              created_at: post.created_at,
               source: 'danbooru'
             })),
             total: posts.length,
