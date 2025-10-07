@@ -135,10 +135,13 @@ async function searchDanbooru(tags, page = 1, limit = 20) {
         try {
           const posts = JSON.parse(data);
           resolve({
-            results: posts.map(post => ({
+            results: posts.filter(post => {
+              // Filter out posts without any valid image URL
+              return post.file_url || post.large_file_url || post.preview_file_url;
+            }).map(post => ({
               id: post.id,
               file_url: post.file_url || post.large_file_url,
-              preview_url: post.preview_file_url || post.file_url,
+              preview_url: post.preview_file_url || post.file_url || post.large_file_url,
               large_file_url: post.large_file_url || post.file_url,
               tag_string: post.tag_string || '',
               tag_string_artist: post.tag_string_artist || '',
