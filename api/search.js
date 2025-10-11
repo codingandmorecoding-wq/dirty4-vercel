@@ -59,6 +59,7 @@ function searchHistorical(tags, page = 1, limit = 42) {
         file_url: img.fileUrl,
         preview_url: img.thumbnailUrl,
         large_file_url: img.fileUrl,
+        thumbnailUrl: img.thumbnailUrl,
         tag_string: (img.tags || []).join(' '),
         tag_string_artist: '',
         rating: img.rating,
@@ -106,6 +107,7 @@ function searchHistorical(tags, page = 1, limit = 42) {
       file_url: img.fileUrl,
       preview_url: img.thumbnailUrl,
       large_file_url: img.fileUrl,
+      thumbnailUrl: img.thumbnailUrl,
       tag_string: (img.tags || []).join(' '),
       tag_string_artist: '',
       rating: img.rating,
@@ -136,13 +138,17 @@ async function searchDanbooru(tags, page = 1, limit = 20) {
           const posts = JSON.parse(data);
           resolve({
             results: posts.filter(post => {
-              // Filter out posts without any valid image URL
-              return post.file_url || post.large_file_url || post.preview_file_url;
+              // Filter out posts without any valid image URL (including empty strings)
+              const hasFileUrl = post.file_url && post.file_url.trim() !== '';
+              const hasLargeUrl = post.large_file_url && post.large_file_url.trim() !== '';
+              const hasPreviewUrl = post.preview_file_url && post.preview_file_url.trim() !== '';
+              return hasFileUrl || hasLargeUrl || hasPreviewUrl;
             }).map(post => ({
               id: post.id,
-              file_url: post.file_url || post.large_file_url,
-              preview_url: post.preview_file_url || post.file_url || post.large_file_url,
-              large_file_url: post.large_file_url || post.file_url,
+              file_url: post.file_url || post.large_file_url || post.preview_file_url,
+              preview_url: post.preview_file_url || post.large_file_url || post.file_url,
+              large_file_url: post.large_file_url || post.file_url || post.preview_file_url,
+              thumbnailUrl: post.preview_file_url || post.large_file_url || post.file_url,
               tag_string: post.tag_string || '',
               tag_string_artist: post.tag_string_artist || '',
               rating: post.rating || 'q',
