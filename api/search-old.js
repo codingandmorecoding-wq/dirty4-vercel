@@ -1,125 +1,53 @@
-// Optimized search API - handles large search indices efficiently
+// 🔍 UNIFIED SEARCH API - Merges Danbooru + Historical Archive
+// Provides seamless search experience across all sources
+// Updated: 2025-10-06 - Fixed file extensions in search index
+
 import https from 'https';
 
-// R2 URLs for search indexes
+// R2 URLs for search indexes - using correct public bucket URL
 const INDEX_URLS = {
   search: 'https://pub-4362d916855b41209502ea1705f6d048.r2.dev/search-index.json',
   autocomplete: 'https://pub-4362d916855b41209502ea1705f6d048.r2.dev/search-index-autocomplete.json'
 };
 
-// Cache with longer duration and memory management
+// Load search index from R2
 let searchIndex = null;
 let autocompleteIndex = null;
 let loadingPromise = null;
-let loadStartTime = null;
-
-// Memory cleanup function
-function cleanupMemory() {
-  if (global.gc) {
-    global.gc();
-  }
-}
-
-// Stream large JSON files efficiently
-async function streamJSON(url, onProgress) {
-  return new Promise((resolve, reject) => {
-    const request = https.get(url, (response) => {
-      if (response.statusCode !== 200) {
-        reject(new Error(`HTTP ${response.statusCode}`));
-        return;
-      }
-
-      let data = '';
-      let chunks = 0;
-      const maxChunks = 10000; // Prevent infinite loops
-
-      response.on('data', (chunk) => {
-        data += chunk;
-        chunks++;
-
-        if (chunks % 100 === 0) {
-          if (onProgress) onProgress(data.length);
-        }
-
-        // Prevent memory issues with very large files
-        if (chunks > maxChunks) {
-          reject(new Error('File too large'));
-          response.destroy();
-        }
-      });
-
-      response.on('end', () => {
-        try {
-          const parsed = JSON.parse(data);
-          resolve(parsed);
-        } catch (e) {
-          reject(new Error('JSON parse error: ' + e.message));
-        }
-      });
-    });
-
-    request.on('error', reject);
-    request.setTimeout(30000, () => {
-      request.destroy();
-      reject(new Error('Request timeout'));
-    });
-  });
-}
 
 async function loadIndexes() {
   if (loadingPromise) return loadingPromise;
 
   loadingPromise = (async () => {
     try {
-      loadStartTime = Date.now();
-      console.log('Starting to load search indexes...');
-
-      // Load search index with progress tracking
       if (!searchIndex) {
-        console.log('Fetching search index from R2 (this may take a while for 992MB file)...');
-
-        searchIndex = await streamJSON(INDEX_URLS.search, (bytesLoaded) => {
-          console.log(`Downloaded ${(bytesLoaded / 1024 / 1024).toFixed(1)}MB...`);
-        });
-
-        const loadTime = ((Date.now() - loadStartTime) / 1000).toFixed(1);
-        console.log(`✅ Loaded search index: ${searchIndex.total_items} items in ${loadTime}s`);
-        cleanupMemory();
+        console.log('📥 Fetching search index from R2...');
+        const response = await fetch(INDEX_URLS.search);
+        searchIndex = await response.json();
+        console.log(`Loaded search index: ${searchIndex.total_items} images`);
       }
 
-      // Load autocomplete index
       if (!autocompleteIndex) {
-        console.log('Fetching autocomplete index from R2...');
-
-        autocompleteIndex = await streamJSON(INDEX_URLS.autocomplete);
-
-        const tagCount = Object.keys(autocompleteIndex.tags || {}).length;
-        console.log(`✅ Loaded autocomplete index: ${tagCount} tags`);
-        cleanupMemory();
+        console.log('📥 Fetching autocomplete index from R2...');
+        const response = await fetch(INDEX_URLS.autocomplete);
+        autocompleteIndex = await response.json();
+        console.log(`Loaded autocomplete index: ${Object.keys(autocompleteIndex.tags).length} tags`);
       }
-
-      console.log('All indexes loaded successfully');
-      return true;
-
     } catch (error) {
-      console.error('Failed to load indexes:', error);
-      // Don't reject completely - allow graceful degradation
-      return false;
+      console.error('Failed to load indexes from R2:', error);
     }
   })();
 
   return loadingPromise;
 }
 
-// Optimized search function
+// Search historical archive
 function searchHistorical(tags, page = 1, limit = 42) {
   if (!searchIndex || !searchIndex.items) {
-    console.log('Search index not available');
     return { results: [], total: 0, source: 'historical' };
   }
 
   const queryLower = tags.toLowerCase().trim();
-  console.log(`Searching for: "${queryLower}"`);
 
   if (!queryLower) {
     // No tags = return recent images
@@ -144,11 +72,9 @@ function searchHistorical(tags, page = 1, limit = 42) {
     };
   }
 
-  // Create tag map for efficient searching (limit to first 10k items for performance)
+  // Create a tag-to-items map for efficient searching
   const tagMap = {};
-  const itemsToSearch = searchIndex.items.slice(0, 10000); // Limit for performance
-
-  itemsToSearch.forEach(item => {
+  searchIndex.items.forEach(item => {
     (item.tags || []).forEach(tag => {
       const tagLower = tag.toLowerCase();
       if (!tagMap[tagLower]) {
@@ -158,30 +84,23 @@ function searchHistorical(tags, page = 1, limit = 42) {
     });
   });
 
-  console.log(`Tag map created with ${Object.keys(tagMap).length} unique tags`);
-
-  // Search for exact match first
+  // Try the full query as a single tag first
   let matchingItems = tagMap[queryLower] || [];
-  console.log(`Exact match found: ${matchingItems.length} items`);
 
-  // If no exact match, try partial matches
+  // If no results, try splitting into individual tags and use AND logic
   if (matchingItems.length === 0) {
-    const partialMatches = Object.keys(tagMap).filter(tag => tag.includes(queryLower));
-    console.log(`Partial matches found: ${partialMatches.length} tags`);
+    const tagList = queryLower.split(/\s+/).filter(t => t.length > 0);
+    const matchingSets = tagList.map(tag => tagMap[tag] || []);
 
-    for (tag of partialMatches) {
-      matchingItems.push(...tagMap[tag]);
+    // Intersection of all tag sets
+    if (matchingSets.length > 0) {
+      matchingItems = matchingSets[0];
+      for (let i = 1; i < matchingSets.length; i++) {
+        matchingItems = matchingItems.filter(item =>
+          matchingSets[i].some(match => match.id === item.id)
+        );
+      }
     }
-
-    // Remove duplicates
-    const seen = new Set();
-    matchingItems = matchingItems.filter(item => {
-      if (seen.has(item.id)) return false;
-      seen.add(item.id);
-      return true;
-    });
-
-    console.log(`Total unique matches after partial search: ${matchingItems.length}`);
   }
 
   // Sort by score
@@ -190,8 +109,6 @@ function searchHistorical(tags, page = 1, limit = 42) {
   // Paginate
   const start = (page - 1) * limit;
   const results = matchingItems.slice(start, start + limit);
-
-  console.log(`Returning ${results.length} results for page ${page}`);
 
   return {
     results: results.map(img => ({
@@ -212,7 +129,7 @@ function searchHistorical(tags, page = 1, limit = 42) {
   };
 }
 
-// Search Danbooru (unchanged)
+// Search Danbooru
 async function searchDanbooru(tags, page = 1, limit = 20) {
   return new Promise((resolve) => {
     const url = `https://danbooru.donmai.us/posts.json?tags=${encodeURIComponent(tags)}&page=${page}&limit=${limit}`;
@@ -230,6 +147,7 @@ async function searchDanbooru(tags, page = 1, limit = 20) {
           const posts = JSON.parse(data);
           resolve({
             results: posts.filter(post => {
+              // Filter out posts without any valid image URL (including empty strings)
               const hasFileUrl = post.file_url && post.file_url.trim() !== '';
               const hasLargeUrl = post.large_file_url && post.large_file_url.trim() !== '';
               const hasPreviewUrl = post.preview_file_url && post.preview_file_url.trim() !== '';
@@ -272,12 +190,9 @@ function autocomplete(query, limit = 10) {
   const queryLower = query.toLowerCase().trim();
   if (!queryLower) return [];
 
-  // Find tags matching query (limit search to prevent timeouts)
-  const allTags = Object.keys(autocompleteIndex.tags);
-  const matches = allTags
+  // Find tags matching query
+  const matches = Object.keys(autocompleteIndex.tags)
     .filter(tag => tag.includes(queryLower))
-    .slice(0, limit * 2) // Get more to filter by relevance
-    .sort((a, b) => (autocompleteIndex.tags[b].length - autocompleteIndex.tags[a].length))
     .slice(0, limit)
     .map(tag => ({
       name: tag,
@@ -298,6 +213,9 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
+  // Load indexes on first request (wait for completion)
+  await loadIndexes();
+
   const { tags = '', page = '1', limit = '42', mode = 'unified', autocomplete: autoQuery } = req.query;
 
   try {
@@ -309,29 +227,6 @@ export default async function handler(req, res) {
 
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);
-
-    console.log(`Search request: tags="${tags}", page=${pageNum}, mode=${mode}`);
-
-    // Load indexes (but don't wait too long)
-    const loadPromise = loadIndexes();
-    const timeoutPromise = new Promise(resolve => setTimeout(() => resolve(false), 10000)); // 10 second timeout
-
-    const loadSuccess = await Promise.race([loadPromise, timeoutPromise]);
-
-    if (!loadSuccess) {
-      console.log('Index loading timed out, using Danbooru fallback');
-      const danbooruData = await searchDanbooru(tags, pageNum, limitNum);
-      return res.status(200).json({
-        posts: danbooruData.results,
-        total: danbooruData.total,
-        page: pageNum,
-        sources: {
-          historical: 0,
-          danbooru: danbooruData.total
-        },
-        mode: 'danbooru-fallback'
-      });
-    }
 
     // Unified mode: Search historical first, use Danbooru as fallback
     if (mode === 'unified' || mode === 'all') {
