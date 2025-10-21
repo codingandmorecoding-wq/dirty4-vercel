@@ -4,10 +4,10 @@
 
 import https from 'https';
 
-// R2 URLs for search indexes
+// R2 URLs for search indexes - Updated for dirty4-historical bucket
 const INDEX_URLS = {
-  search: 'https://pub-4362d916855b41209502ea1705f6d048.r2.dev/search-index.json',
-  autocomplete: 'https://pub-4362d916855b41209502ea1705f6d048.r2.dev/search-index-autocomplete.json'
+  search: 'https://pub-64cfcd0d57d3b4c161226c161b0a5237.r2.dev/search-index.json',
+  autocomplete: 'https://pub-64cfcd0d57d3b4c161226c161b0a5237.r2.dev/search-index-autocomplete.json'
 };
 
 // Load search index from R2
@@ -24,14 +24,14 @@ async function loadIndexes() {
         console.log('📥 Fetching search index from R2...');
         const response = await fetch(INDEX_URLS.search);
         searchIndex = await response.json();
-        console.log(`✅ Loaded search index: ${searchIndex.totalImages} images`);
+        console.log(`Loaded search index: ${searchIndex.total_items} images`);
       }
 
       if (!autocompleteIndex) {
         console.log('📥 Fetching autocomplete index from R2...');
         const response = await fetch(INDEX_URLS.autocomplete);
         autocompleteIndex = await response.json();
-        console.log(`✅ Loaded autocomplete index: ${autocompleteIndex.tags.length} tags`);
+        console.log(`Loaded autocomplete index: ${Object.keys(autocompleteIndex.tags).length} tags`);
       }
     } catch (error) {
       console.error('Failed to load indexes from R2:', error);
@@ -43,7 +43,7 @@ async function loadIndexes() {
 
 // Search historical archive
 function searchHistorical(tags, page = 1, limit = 42) {
-  if (!searchIndex) {
+  if (!searchIndex || !searchIndex.items) {
     return { results: [], total: 0, source: 'historical' };
   }
 
@@ -52,70 +52,79 @@ function searchHistorical(tags, page = 1, limit = 42) {
   if (!queryLower) {
     // No tags = return recent images
     const start = (page - 1) * limit;
-    const results = searchIndex.images.slice(start, start + limit);
+    const results = searchIndex.items.slice(start, start + limit);
     return {
       results: results.map(img => ({
         id: img.id,
-        file_url: img.fileUrl,
-        preview_url: img.thumbnailUrl,
-        large_file_url: img.fileUrl,
-        thumbnailUrl: img.thumbnailUrl,
+        file_url: `https://pub-64cfcd0d57d3b4c161226c161b0a5237.r2.dev/${img.file_url}`,
+        preview_url: `https://pub-64cfcd0d57d3b4c161226c161b0a5237.r2.dev/${img.thumbnail_url}`,
+        large_file_url: `https://pub-64cfcd0d57d3b4c161226c161b0a5237.r2.dev/${img.file_url}`,
+        thumbnailUrl: `https://pub-64cfcd0d57d3b4c161226c161b0a5237.r2.dev/${img.thumbnail_url}`,
         tag_string: (img.tags || []).join(' '),
-        tag_string_artist: '',
+        tag_string_artist: img.artist || '',
         rating: img.rating,
         score: img.score || 0,
-        created_at: img.createdAt,
+        created_at: img.created_at,
         source: 'historical'
       })),
-      total: searchIndex.totalImages,
+      total: searchIndex.total_items,
       source: 'historical'
     };
   }
 
-  // Try the full query as a single tag first (for multi-word tags like "genshin impact")
-  let matchingIds = new Set(searchIndex.tagIndex[queryLower] || []);
+  // Create a tag-to-items map for efficient searching
+  const tagMap = {};
+  searchIndex.items.forEach(item => {
+    (item.tags || []).forEach(tag => {
+      const tagLower = tag.toLowerCase();
+      if (!tagMap[tagLower]) {
+        tagMap[tagLower] = [];
+      }
+      tagMap[tagLower].push(item);
+    });
+  });
+
+  // Try the full query as a single tag first
+  let matchingItems = tagMap[queryLower] || [];
 
   // If no results, try splitting into individual tags and use AND logic
-  if (matchingIds.size === 0) {
+  if (matchingItems.length === 0) {
     const tagList = queryLower.split(/\s+/).filter(t => t.length > 0);
-    const matchingSets = tagList.map(tag => {
-      return new Set(searchIndex.tagIndex[tag] || []);
-    });
+    const matchingSets = tagList.map(tag => tagMap[tag] || []);
 
     // Intersection of all tag sets
     if (matchingSets.length > 0) {
-      matchingIds = matchingSets[0];
+      matchingItems = matchingSets[0];
       for (let i = 1; i < matchingSets.length; i++) {
-        matchingIds = new Set([...matchingIds].filter(id => matchingSets[i].has(id)));
+        matchingItems = matchingItems.filter(item =>
+          matchingSets[i].some(match => match.id === item.id)
+        );
       }
     }
   }
 
-  // Get image data for matching IDs
-  const allMatches = Array.from(matchingIds)
-    .map(id => searchIndex.images.find(img => img.id === id))
-    .filter(img => img)
-    .sort((a, b) => (b.score || 0) - (a.score || 0)); // Sort by score
+  // Sort by score
+  matchingItems.sort((a, b) => (b.score || 0) - (a.score || 0));
 
   // Paginate
   const start = (page - 1) * limit;
-  const results = allMatches.slice(start, start + limit);
+  const results = matchingItems.slice(start, start + limit);
 
   return {
     results: results.map(img => ({
       id: img.id,
-      file_url: img.fileUrl,
-      preview_url: img.thumbnailUrl,
-      large_file_url: img.fileUrl,
-      thumbnailUrl: img.thumbnailUrl,
+      file_url: `https://pub-64cfcd0d57d3b4c161226c161b0a5237.r2.dev/${img.file_url}`,
+      preview_url: `https://pub-64cfcd0d57d3b4c161226c161b0a5237.r2.dev/${img.thumbnail_url}`,
+      large_file_url: `https://pub-64cfcd0d57d3b4c161226c161b0a5237.r2.dev/${img.file_url}`,
+      thumbnailUrl: `https://pub-64cfcd0d57d3b4c161226c161b0a5237.r2.dev/${img.thumbnail_url}`,
       tag_string: (img.tags || []).join(' '),
-      tag_string_artist: '',
+      tag_string_artist: img.artist || '',
       rating: img.rating,
       score: img.score || 0,
-      created_at: img.createdAt,
+      created_at: img.created_at,
       source: 'historical'
     })),
-    total: allMatches.length,
+    total: matchingItems.length,
     source: 'historical'
   };
 }
@@ -174,7 +183,7 @@ async function searchDanbooru(tags, page = 1, limit = 20) {
 
 // Autocomplete tags
 function autocomplete(query, limit = 10) {
-  if (!autocompleteIndex) {
+  if (!autocompleteIndex || !autocompleteIndex.tags) {
     return [];
   }
 
@@ -182,12 +191,12 @@ function autocomplete(query, limit = 10) {
   if (!queryLower) return [];
 
   // Find tags matching query
-  const matches = autocompleteIndex.tags
-    .filter(item => item.tag.includes(queryLower))
+  const matches = Object.keys(autocompleteIndex.tags)
+    .filter(tag => tag.includes(queryLower))
     .slice(0, limit)
-    .map(item => ({
-      name: item.tag,
-      post_count: item.count,
+    .map(tag => ({
+      name: tag,
+      post_count: autocompleteIndex.tags[tag].length,
       category: 0
     }));
 
