@@ -4,10 +4,10 @@
 
 import https from 'https';
 
-// Local proxy URLs for search indexes (serves from private R2)
+// R2 URLs for search indexes - using correct public bucket URL
 const INDEX_URLS = {
-  search: `${process.env.VERCEL_URL || 'https://dirty4-vercel.vercel.app'}/api/serve-index?type=search`,
-  autocomplete: `${process.env.VERCEL_URL || 'https://dirty4-vercel.vercel.app'}/api/serve-index?type=autocomplete`
+  search: 'https://pub-4362d916855b41209502ea1705f6d048.r2.dev/search-index.json',
+  autocomplete: 'https://pub-4362d916855b41209502ea1705f6d048.r2.dev/search-index-autocomplete.json'
 };
 
 // Load search index from R2
@@ -56,10 +56,10 @@ function searchHistorical(tags, page = 1, limit = 42) {
     return {
       results: results.map(img => ({
         id: img.id,
-        file_url: `https://pub-64cfcd0d57d3b4c161226c161b0a5237.r2.dev/${img.file_url}`,
-        preview_url: `https://pub-64cfcd0d57d3b4c161226c161b0a5237.r2.dev/${img.thumbnail_url}`,
-        large_file_url: `https://pub-64cfcd0d57d3b4c161226c161b0a5237.r2.dev/${img.file_url}`,
-        thumbnailUrl: `https://pub-64cfcd0d57d3b4c161226c161b0a5237.r2.dev/${img.thumbnail_url}`,
+        file_url: `https://pub-4362d916855b41209502ea1705f6d048.r2.dev/${img.file_url}`,
+        preview_url: `https://pub-4362d916855b41209502ea1705f6d048.r2.dev/${img.thumbnail_url}`,
+        large_file_url: `https://pub-4362d916855b41209502ea1705f6d048.r2.dev/${img.file_url}`,
+        thumbnailUrl: `https://pub-4362d916855b41209502ea1705f6d048.r2.dev/${img.thumbnail_url}`,
         tag_string: (img.tags || []).join(' '),
         tag_string_artist: img.artist || '',
         rating: img.rating,
@@ -113,10 +113,10 @@ function searchHistorical(tags, page = 1, limit = 42) {
   return {
     results: results.map(img => ({
       id: img.id,
-      file_url: `https://pub-64cfcd0d57d3b4c161226c161b0a5237.r2.dev/${img.file_url}`,
-      preview_url: `https://pub-64cfcd0d57d3b4c161226c161b0a5237.r2.dev/${img.thumbnail_url}`,
-      large_file_url: `https://pub-64cfcd0d57d3b4c161226c161b0a5237.r2.dev/${img.file_url}`,
-      thumbnailUrl: `https://pub-64cfcd0d57d3b4c161226c161b0a5237.r2.dev/${img.thumbnail_url}`,
+      file_url: `https://pub-4362d916855b41209502ea1705f6d048.r2.dev/${img.file_url}`,
+      preview_url: `https://pub-4362d916855b41209502ea1705f6d048.r2.dev/${img.thumbnail_url}`,
+      large_file_url: `https://pub-4362d916855b41209502ea1705f6d048.r2.dev/${img.file_url}`,
+      thumbnailUrl: `https://pub-4362d916855b41209502ea1705f6d048.r2.dev/${img.thumbnail_url}`,
       tag_string: (img.tags || []).join(' '),
       tag_string_artist: img.artist || '',
       rating: img.rating,
