@@ -4,10 +4,10 @@
 
 import https from 'https';
 
-// R2 URLs for search indexes - Updated for dirty4-historical bucket
+// Local proxy URLs for search indexes (serves from private R2)
 const INDEX_URLS = {
-  search: 'https://pub-64cfcd0d57d3b4c161226c161b0a5237.r2.dev/search-index.json',
-  autocomplete: 'https://pub-64cfcd0d57d3b4c161226c161b0a5237.r2.dev/search-index-autocomplete.json'
+  search: `${process.env.VERCEL_URL || 'https://dirty4-vercel.vercel.app'}/api/serve-index?type=search`,
+  autocomplete: `${process.env.VERCEL_URL || 'https://dirty4-vercel.vercel.app'}/api/serve-index?type=autocomplete`
 };
 
 // Load search index from R2
