@@ -70,7 +70,7 @@ async function searchHistorical(tags, page = 1, limit = 42) {
             results: results.map(img => ({
                 id: img.id,
                 file_url: `${R2_BASE_URL}/${img.file_url}`,
-                preview_url: `${R_BASE_URL}/${img.thumbnail_url}`,
+                preview_url: `${R2_BASE_URL}/${img.thumbnail_url}`,
                 large_file_url: `${R2_BASE_URL}/${img.file_url}`,
                 thumbnailUrl: `${R2_BASE_URL}/${img.thumbnail_url}`,
                 tag_string: (img.tags || []).join(' '),
@@ -113,29 +113,14 @@ async function searchHistorical(tags, page = 1, limit = 42) {
         return { results: [], total: 0, source: 'historical-optimized' };
     }
 
-    // Convert to array and sort by batch number for efficient loading
-    const matchingIdArray = Array.from(matchingIds);
-    const batchNumbers = new Set();
-
-    // Determine which batches contain matching items
-    for (const id of matchingIdArray) {
-        // Extract batch number from ID (assuming format like "12345678_metadata")
-        const numericId = parseInt(id.replace('_metadata', ''));
-        if (!isNaN(numericId)) {
-            const batchNumber = Math.ceil(numericId / 10000);
-            batchNumbers.add(batchNumber);
-        }
-    }
-
-    console.log(`Need to load ${batchNumbers.size} batches: ${Array.from(batchNumbers).sort((a, b) => a - b)}`);
-
-    // Load required batches and collect items
+    // Since we can't predict which batch contains which IDs, load all batches until we find matches
     const allItems = [];
-    const loadedBatches = new Map();
+    let batchesToCheck = 60; // Total number of batches
+    let foundAllMatches = false;
 
-    for (const batchNum of batchNumbers) {
+    for (let batchNum = 1; batchNum <= batchesToCheck && !foundAllMatches; batchNum++) {
+        console.log(`Loading batch ${batchNum} to search for matches...`);
         const batch = await loadBatch(batchNum);
-        loadedBatches.set(batchNum, batch);
 
         // Add items from this batch that match our IDs
         batch.items.forEach(item => {
@@ -143,6 +128,12 @@ async function searchHistorical(tags, page = 1, limit = 42) {
                 allItems.push(item);
             }
         });
+
+        // Stop early if we've found all matching items
+        if (allItems.length >= matchingIds.size) {
+            foundAllMatches = true;
+            console.log(`Found all ${matchingIds.size} matches by batch ${batchNum}`);
+        }
     }
 
     // Sort by score
