@@ -1,4 +1,4 @@
-// Fixed Search API - Uses splitted tag chunks to avoid string length limits
+// Simplified Search API - Direct chunk access without manifest
 import https from 'https';
 
 // R2 base URL
@@ -6,43 +6,23 @@ const R2_BASE_URL = 'https://pub-4362d916855b41209502ea1705f6d048.r2.dev';
 
 // Cache for loaded chunks
 const tagChunkCache = new Map();
-let tagsManifest = null;
 
-// Load tags manifest
-async function loadTagsManifest() {
-    if (tagsManifest) return tagsManifest;
-
-    try {
-        const response = await fetch(`${R2_BASE_URL}/indices/tags-splitted/tags-manifest.json`, {
-            signal: AbortSignal.timeout(5000)
-        });
-        if (response.ok) {
-            tagsManifest = await response.json();
-            console.log(`Loaded tags manifest: ${tagsManifest.total_chunks} chunks`);
-            return tagsManifest;
-        }
-    } catch (error) {
-        console.error('Failed to load tags manifest:', error);
-    }
-    return null;
-}
-
-// Load specific tag chunk
+// Load specific tag chunk directly
 async function loadTagChunk(chunkName) {
     if (tagChunkCache.has(chunkName)) {
         return tagChunkCache.get(chunkName);
     }
 
     try {
-        console.log(`Loading tag chunk: ${chunkName}`);
+        console.log(`Loading tag chunk: tags-${chunkName}`);
         const response = await fetch(`${R2_BASE_URL}/indices/tags-splitted/tags-${chunkName}.json`, {
-            signal: AbortSignal.timeout(10000)
+            signal: AbortSignal.timeout(15000)
         });
 
         if (response.ok) {
             const chunkData = await response.json();
-            tagChunkCache.set(chunkName, chunkData.tags);
             console.log(`Loaded chunk ${chunkName}: ${chunkData.total_tags} tags`);
+            tagChunkCache.set(chunkName, chunkData.tags);
             return chunkData.tags;
         }
     } catch (error) {
@@ -68,8 +48,8 @@ async function loadSampleBatch() {
     return null;
 }
 
-// Search using chunked tags
-async function searchChunked(tags, page = 1, limit = 42) {
+// Search using direct chunk access
+async function searchDirect(tags, page = 1, limit = 42) {
     const queryLower = tags.toLowerCase().trim();
 
     if (!queryLower) {
@@ -99,52 +79,36 @@ async function searchChunked(tags, page = 1, limit = 42) {
         return { results: [], total: 0, source: 'r2-storage' };
     }
 
-    // Determine which chunk might contain our query
+    // Determine which chunk to check
     const firstChar = queryLower[0];
-    let likelyChunks = [firstChar];
+    console.log(`Looking for "${queryLower}" in chunk "${firstChar}"`);
 
-    // For 'equestria girls', check 'e' chunk
-    if (queryLower.startsWith('equestria')) {
-        likelyChunks = ['e'];
-    }
-
-    // Load the manifest to get available chunks
-    const manifest = await loadTagsManifest();
-    if (!manifest) {
-        console.error('Cannot load tags manifest');
+    // Load the relevant chunk
+    const chunkTags = await loadTagChunk(firstChar);
+    if (!chunkTags) {
+        console.log(`Failed to load chunk ${firstChar}`);
         return { results: [], total: 0, source: 'r2-storage' };
     }
 
-    // Search through likely chunks
+    // Search for matches
     let matchingIds = [];
-    for (const chunkName of likelyChunks) {
-        if (manifest.chunks.includes(`tags-${chunkName}.json`)) {
-            const chunkTags = await loadTagChunk(chunkName);
-            if (chunkTags) {
-                // Look for exact match
-                if (chunkTags[queryLower]) {
-                    matchingIds = chunkTags[queryLower];
-                    console.log(`Found ${matchingIds.length} exact matches in chunk ${chunkName}`);
-                    break;
-                }
 
-                // Look for partial matches
-                for (const tag in chunkTags) {
-                    if (tag.includes(queryLower) || queryLower.includes(tag)) {
-                        matchingIds.push(...chunkTags[tag]);
-                    }
-                }
-
-                if (matchingIds.length > 0) {
-                    console.log(`Found ${matchingIds.length} partial matches in chunk ${chunkName}`);
-                    break;
-                }
+    // Exact match first
+    if (chunkTags[queryLower]) {
+        matchingIds = chunkTags[queryLower];
+        console.log(`Found ${matchingIds.length} exact matches for "${queryLower}"`);
+    } else {
+        // Partial matches
+        for (const tag in chunkTags) {
+            if (tag.includes(queryLower) || queryLower.includes(tag)) {
+                matchingIds.push(...chunkTags[tag]);
             }
         }
+        console.log(`Found ${matchingIds.length} partial matches for "${queryLower}"`);
     }
 
     if (matchingIds.length === 0) {
-        console.log(`No matches found for "${queryLower}"`);
+        console.log(`No matches found for "${queryLower}" in chunk ${firstChar}`);
         return { results: [], total: 0, source: 'r2-storage' };
     }
 
@@ -171,28 +135,23 @@ async function searchChunked(tags, page = 1, limit = 42) {
             source: 'r2-storage'
         }));
 
-    console.log(`Returning ${results.length} results from sample batch`);
+    console.log(`Returning ${results.length} results from sample batch (total matches: ${matchingIds.length})`);
 
     return {
         results,
         total: matchingIds.length,
-        source: 'r2-storage-chunked'
+        source: 'r2-storage-direct'
     };
 }
 
-// Simple autocomplete using chunked data
-async function autocompleteChunked(query, limit = 10) {
+// Simple autocomplete
+async function autocompleteDirect(query, limit = 10) {
     const queryLower = query.toLowerCase().trim();
     if (!queryLower) return [];
 
     const firstChar = queryLower[0];
-    const manifest = await loadTagsManifest();
-
-    if (!manifest || !manifest.chunks.includes(`tags-${firstChar}.json`)) {
-        return [];
-    }
-
     const chunkTags = await loadTagChunk(firstChar);
+
     if (!chunkTags) return [];
 
     const matches = Object.keys(chunkTags)
@@ -217,29 +176,29 @@ export default async function handler(req, res) {
         return res.status(200).end();
     }
 
-    const { tags = '', page = '1', limit = '42', mode = 'chunked', autocomplete: autoQuery } = req.query;
+    const { tags = '', page = '1', limit = '42', mode = 'direct', autocomplete: autoQuery } = req.query;
 
     try {
-        console.log(`Chunked search request: tags="${tags}", page=${page}`);
+        console.log(`Direct search request: tags="${tags}", page=${page}`);
 
         // Autocomplete endpoint
         if (autoQuery) {
-            const suggestions = await autocompleteChunked(autoQuery, 20);
+            const suggestions = await autocompleteDirect(autoQuery, 20);
             return res.status(200).json(suggestions);
         }
 
         const pageNum = parseInt(page);
         const limitNum = parseInt(limit);
 
-        // Search using chunked tags
-        const data = await searchChunked(tags, pageNum, limitNum);
+        // Search using direct chunk access
+        const data = await searchDirect(tags, pageNum, limitNum);
 
         return res.status(200).json({
             posts: data.results,
             total: data.total,
             page: pageNum,
             source: data.source,
-            message: 'Results from R2 storage using chunked tags',
+            message: 'Results from R2 storage using direct chunk access',
             sources: {
                 historical: data.total,
                 danbooru: 0
@@ -247,7 +206,7 @@ export default async function handler(req, res) {
         });
 
     } catch (error) {
-        console.error('Chunked search error:', error);
+        console.error('Direct search error:', error);
         return res.status(500).json({
             error: 'Search failed',
             message: error.message
