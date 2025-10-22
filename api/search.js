@@ -296,59 +296,10 @@ async function searchDirect(tags, page = 1, limit = 42) {
     console.log('=== SEARCH DEBUG ===');
     const queryLower = tags.toLowerCase().trim();
 
-    // PHASE 2: Smart Search Integration - SIMPLIFIED TEST VERSION
-    console.log('=== Smart Search Test ===');
-    const searchTags = queryLower.split(/\s+/).filter(tag => tag.length > 0);
-
-    if (searchTags.length === 1) {
-        const testTag = searchTags[0];
-        console.log(`Testing smart search for: "${testTag}"`);
-
-        try {
-            // Simplified test - just try to fetch a small part of the smart index
-            console.log('Testing smart index accessibility...');
-
-            const indexTestResponse = await fetch(`${R2_BASE_URL}/indices/smart-indexing/tag_popularity_index.json`, {
-                headers: { 'Range': 'bytes=0-1024' } // Only fetch first 1KB for testing
-            });
-
-            console.log(`Smart index test response status: ${indexTestResponse.status}`);
-
-            if (indexTestResponse.ok || indexTestResponse.status === 206) {
-                console.log('Smart index is accessible! Attempting full test...');
-
-                // Now try the full test with a very simple approach
-                const fullIndexResponse = await fetch(`${R2_BASE_URL}/indices/smart-indexing/tag_popularity_index.json`);
-
-                if (fullIndexResponse.ok) {
-                    const indexData = await fullIndexResponse.json();
-                    console.log(`Smart index loaded: ${Object.keys(indexData).length} tags`);
-
-                    if (indexData[testTag]) {
-                        console.log(`Tag "${testTag}" found in smart index!`);
-                        console.log(`Total results: ${indexData[testTag].total_results}`);
-
-                        // For now, just return success without loading batches
-                        return {
-                            posts: [],
-                            total: indexData[testTag].total_results,
-                            page: page,
-                            source: 'smart-indexing-test',
-                            message: `Smart index test successful - found ${indexData[testTag].total_results} results for "${testTag}"`
-                        };
-                    } else {
-                        console.log(`Tag "${testTag}" not found in smart index`);
-                    }
-                } else {
-                    console.log('Failed to load full smart index');
-                }
-            } else {
-                console.log('Smart index not accessible');
-            }
-        } catch (error) {
-            console.log('Smart search test failed:', error.message);
-        }
-    }
+    // PHASE 2: Smart Search Integration - DISABLED FOR NOW
+    // The smart search test is causing server errors - need to debug the issue
+    // console.log('=== Smart Search Test ===');
+    // TODO: Fix smart search integration and re-enable
 
     if (!queryLower) {
         // Return sample content for empty search
