@@ -294,7 +294,9 @@ async function searchDirect(tags, page = 1, limit = 42) {
     console.log('=== SEARCH DEBUG ===');
     const queryLower = tags.toLowerCase().trim();
 
-    // Try smart search first for popular tags
+    // Smart search temporarily disabled for debugging
+    // TODO: Re-enable after fixing deployment issue
+    /*
     const searchTags = queryLower.split(/\s+/).filter(tag => tag.length > 0);
     if (searchTags.length === 1) {
         // Single tag search - try smart indexing first
@@ -314,6 +316,7 @@ async function searchDirect(tags, page = 1, limit = 42) {
             console.log('Smart search failed or returned no results, falling back to regular search');
         }
     }
+    */
 
     if (!queryLower) {
         // Return sample content for empty search
