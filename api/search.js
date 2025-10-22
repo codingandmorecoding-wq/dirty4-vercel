@@ -214,13 +214,8 @@ async function searchDirect(tags, page = 1, limit = 42) {
     let batchesSearched = 0;
 
     // Determine search scope based on query popularity and results
-    let batchesToSearch = 20; // Default
-    if (matchingIds.length > 500) {
-        batchesToSearch = 40; // Search more batches for popular tags
-    }
-    if (matchingIds.length > 1000) {
-        batchesToSearch = 60; // Search all batches for very popular tags
-    }
+    let batchesToSearch = 60; // Default to searching ALL batches for complete results
+    console.log(`Query has ${matchingIds.length} potential matches, searching ${batchesToSearch} batches for complete results`);
 
     // Calculate which batches we need to search based on pagination
     const startBatch = 1; // Always start from beginning for complete results
