@@ -296,7 +296,11 @@ async function searchDirect(tags, page = 1, limit = 42) {
     console.log('=== SEARCH DEBUG ===');
     const queryLower = tags.toLowerCase().trim();
 
-    // Try smart search for single popular tags (Phase 2 implementation)
+    // PHASE 2: Smart Search Integration (Currently disabled for debugging)
+    // TODO: Fix FUNCTION_INVOCATION_FAILED error in smart search logic
+    // Issue: Smart search functions causing deployment failure
+    // Status: Core smart indexing complete, API integration needs debugging
+    /*
     const searchTags = queryLower.split(/\s+/).filter(tag => tag.length > 0);
     if (searchTags.length === 1) {
         console.log(`Attempting smart search for: "${searchTags[0]}"`);
@@ -320,6 +324,7 @@ async function searchDirect(tags, page = 1, limit = 42) {
             console.log('Smart search failed:', error.message);
         }
     }
+    */
 
     if (!queryLower) {
         // Return sample content for empty search
