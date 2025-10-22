@@ -121,6 +121,7 @@ async function getActualFileExtension(imageId) {
 
 // Optimized search using parallel batch loading and caching
 async function searchDirect(tags, page = 1, limit = 42) {
+    console.log('=== SEARCH DEBUG ===');
     const queryLower = tags.toLowerCase().trim();
 
     if (!queryLower) {
@@ -276,7 +277,7 @@ async function searchDirect(tags, page = 1, limit = 42) {
         };
     });
 
-    console.log(`Returning ${results.length} results from ${batchesSearched} batches (total matches: ${allMatchingItems.length})`);
+    console.log(`Returning ${results.length} results from ${batchesSearched || 0} batches (total matches: ${allMatchingItems.length})`);
 
     return {
         results,
