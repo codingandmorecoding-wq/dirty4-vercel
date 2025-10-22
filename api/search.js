@@ -79,38 +79,55 @@ async function searchDirect(tags, page = 1, limit = 42) {
         return { results: [], total: 0, source: 'r2-storage' };
     }
 
-    // Determine which chunk to check
-    const firstChar = queryLower[0];
-    console.log(`Looking for "${queryLower}" in chunk "${firstChar}"`);
+    // Split query into individual tags
+    const searchTags = queryLower.split(/\s+/).filter(tag => tag.length > 0);
+    console.log(`Searching for posts with ALL tags: [${searchTags.join(', ')}]`);
 
-    // Load the relevant chunk
-    const chunkTags = await loadTagChunk(firstChar);
-    if (!chunkTags) {
-        console.log(`Failed to load chunk ${firstChar}`);
-        return { results: [], total: 0, source: 'r2-storage' };
-    }
+    // Collect matching IDs for each tag
+    const tagMatches = new Map();
 
-    // Search for matches
-    let matchingIds = [];
+    // Search for each tag in its respective chunk
+    for (const tag of searchTags) {
+        const firstChar = tag[0];
+        console.log(`Looking for tag "${tag}" in chunk "${firstChar}"`);
 
-    // Exact match first
-    if (chunkTags[queryLower]) {
-        matchingIds = chunkTags[queryLower];
-        console.log(`Found ${matchingIds.length} exact matches for "${queryLower}"`);
-    } else {
-        // Partial matches
-        for (const tag in chunkTags) {
-            if (tag.includes(queryLower) || queryLower.includes(tag)) {
-                matchingIds.push(...chunkTags[tag]);
-            }
+        const chunkTags = await loadTagChunk(firstChar);
+        if (!chunkTags) {
+            console.log(`Failed to load chunk ${firstChar} for tag "${tag}"`);
+            continue;
         }
-        console.log(`Found ${matchingIds.length} partial matches for "${queryLower}"`);
+
+        // Find exact matches first
+        if (chunkTags[tag]) {
+            tagMatches.set(tag, new Set(chunkTags[tag]));
+            console.log(`Found ${chunkTags[tag].length} exact matches for tag "${tag}"`);
+        } else {
+            // Partial matches
+            let partialMatches = [];
+            for (const chunkTag in chunkTags) {
+                if (chunkTag.includes(tag) || tag.includes(chunkTag)) {
+                    partialMatches.push(...chunkTags[chunkTag]);
+                }
+            }
+            tagMatches.set(tag, new Set(partialMatches));
+            console.log(`Found ${partialMatches.length} partial matches for tag "${tag}"`);
+        }
     }
 
-    if (matchingIds.length === 0) {
-        console.log(`No matches found for "${queryLower}" in chunk ${firstChar}`);
+    if (tagMatches.size === 0) {
+        console.log(`No matches found for any tags in query "${queryLower}"`);
         return { results: [], total: 0, source: 'r2-storage' };
     }
+
+    // Find intersection of all tag matches (posts that have ALL tags)
+    const tagSets = Array.from(tagMatches.values());
+    let matchingIds = tagSets.length > 0 ? [...tagSets[0]] : [];
+
+    for (let i = 1; i < tagSets.length; i++) {
+        matchingIds = matchingIds.filter(id => tagSets[i].has(id));
+    }
+
+    console.log(`Found ${matchingIds.length} posts that have ALL tags: [${searchTags.join(', ')}]`);
 
     // Search through all batches to find matching items
     const allMatchingItems = [];
