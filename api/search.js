@@ -176,10 +176,10 @@ export default async function handler(req, res) {
         return res.status(200).end();
     }
 
-    const { tags = '', page = '1', limit = '42', mode = 'direct', autocomplete: autoQuery } = req.query;
+    const { tags = '', page = '1', limit = '42', mode = 'unified', autocomplete: autoQuery } = req.query;
 
     try {
-        console.log(`Direct search request: tags="${tags}", page=${page}`);
+        console.log(`Search request: tags="${tags}", page=${page}, mode=${mode}`);
 
         // Autocomplete endpoint
         if (autoQuery) {
