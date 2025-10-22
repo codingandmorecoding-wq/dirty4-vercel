@@ -180,13 +180,22 @@ async function autocompleteDirect(query, limit = 10) {
     const queryLower = query.toLowerCase().trim();
     if (!queryLower) return [];
 
-    const firstChar = queryLower[0];
+    // Split query into words and get the last word for autocomplete
+    const words = queryLower.split(/\s+/).filter(word => word.length > 0);
+    const lastWord = words[words.length - 1];
+
+    console.log(`Autocomplete for query "${queryLower}" -> focusing on last word "${lastWord}"`);
+
+    if (lastWord.length === 0) return [];
+
+    const firstChar = lastWord[0];
     const chunkTags = await loadTagChunk(firstChar);
 
     if (!chunkTags) return [];
 
+    // Find tags that start with or contain the last word
     const matches = Object.keys(chunkTags)
-        .filter(tag => tag.includes(queryLower))
+        .filter(tag => tag.startsWith(lastWord) || tag.includes(lastWord))
         .slice(0, limit)
         .map(tag => ({
             name: tag,
@@ -194,6 +203,7 @@ async function autocompleteDirect(query, limit = 10) {
             category: 0
         }));
 
+    console.log(`Found ${matches.length} autocomplete matches for "${lastWord}"`);
     return matches;
 }
 
