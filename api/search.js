@@ -6,6 +6,8 @@ const R2_BASE_URL = 'https://pub-4362d916855b41209502ea1705f6d048.r2.dev';
 
 // Cache for loaded chunks
 const tagChunkCache = new Map();
+// Cache for loaded batches
+const batchCache = new Map();
 
 // Load specific tag chunk directly
 async function loadTagChunk(chunkName) {
@@ -48,31 +50,76 @@ async function loadSampleBatch() {
     return null;
 }
 
-// Get actual file extension from R2 instead of metadata
-async function getActualFileExtension(imageId) {
-    try {
-        // Common image/video extensions to try
-        const extensions = ['jpg', 'png', 'gif', 'webp', 'mp4', 'webm'];
+// Load specific batch with caching
+async function loadBatch(batchNum) {
+    const batchKey = `batch-${String(batchNum).padStart(3, '0')}`;
 
-        for (const ext of extensions) {
-            const testUrl = `${R2_BASE_URL}/images/historical_${imageId}.${ext}`;
-            const response = await fetch(testUrl, { method: 'HEAD', signal: AbortSignal.timeout(2000) });
-            if (response.ok) {
-                console.log(`Found actual extension for ${imageId}: .${ext}`);
-                return ext;
+    if (batchCache.has(batchKey)) {
+        return batchCache.get(batchKey);
+    }
+
+    try {
+        const response = await fetch(`${R2_BASE_URL}/indices/items/${batchKey}.json`, {
+            signal: AbortSignal.timeout(5000) // Reduced timeout
+        });
+
+        if (response.ok) {
+            const batch = await response.json();
+            batchCache.set(batchKey, batch);
+            return batch;
+        }
+    } catch (error) {
+        console.error(`Failed to load batch ${batchKey}:`, error);
+    }
+    return null;
+}
+
+// Cache for detected extensions
+const extensionCache = new Map();
+
+// Fast file extension detection (optimized for performance)
+async function getActualFileExtension(imageId) {
+    if (extensionCache.has(imageId)) {
+        return extensionCache.get(imageId);
+    }
+
+    try {
+        // Just check if it's a video or image - faster than checking all extensions
+        const testUrl = `${R2_BASE_URL}/images/historical_${imageId}.jpg`;
+        const response = await fetch(testUrl, { method: 'HEAD', signal: AbortSignal.timeout(500) });
+
+        if (response.ok) {
+            extensionCache.set(imageId, 'jpg');
+            return 'jpg';
+        } else {
+            // Try video formats
+            const mp4Url = `${R2_BASE_URL}/images/historical_${imageId}.mp4`;
+            const mp4Response = await fetch(mp4Url, { method: 'HEAD', signal: AbortSignal.timeout(500) });
+
+            if (mp4Response.ok) {
+                extensionCache.set(imageId, 'mp4');
+                return 'mp4';
+            } else {
+                // Try gif
+                const gifUrl = `${R2_BASE_URL}/images/historical_${imageId}.gif`;
+                const gifResponse = await fetch(gifUrl, { method: 'HEAD', signal: AbortSignal.timeout(500) });
+
+                if (gifResponse.ok) {
+                    extensionCache.set(imageId, 'gif');
+                    return 'gif';
+                }
             }
         }
 
-        // Fallback to metadata extension if can't determine
-        console.log(`Could not determine actual extension for ${imageId}, will use metadata fallback`);
-        return null;
+        extensionCache.set(imageId, 'jpg'); // Fallback
+        return 'jpg';
     } catch (error) {
-        console.log(`Error checking extension for ${imageId}: ${error.message}`);
-        return null;
+        extensionCache.set(imageId, 'jpg'); // Fallback on error
+        return 'jpg';
     }
 }
 
-// Search using direct chunk access
+// Optimized search using parallel batch loading and caching
 async function searchDirect(tags, page = 1, limit = 42) {
     const queryLower = tags.toLowerCase().trim();
 
@@ -80,18 +127,13 @@ async function searchDirect(tags, page = 1, limit = 42) {
         // Return sample content for empty search
         const sampleBatch = await loadSampleBatch();
         if (sampleBatch) {
-            // Create results with proper file extension detection
-            const results = [];
+            // Create results without file extension detection (for speed)
             const sampleItems = sampleBatch.items.slice(0, limit);
-
-            for (const img of sampleItems) {
+            const results = sampleItems.map(img => {
                 const imageId = img.id.replace('_metadata', '');
+                const fileExtension = img.file_url.split('.').pop(); // Use metadata extension for speed
 
-                // Try to get actual file extension from R2
-                const actualExt = await getActualFileExtension(imageId);
-                const fileExtension = actualExt || img.file_url.split('.').pop();
-
-                results.push({
+                return {
                     id: img.id,
                     file_url: `${R2_BASE_URL}/images/historical_${imageId}.${fileExtension}`,
                     preview_url: `${R2_BASE_URL}/thumbnails/historical_${imageId}_thumbnail.${img.thumbnail_url.split('.').pop()}`,
@@ -103,8 +145,8 @@ async function searchDirect(tags, page = 1, limit = 42) {
                     score: img.score || 0,
                     created_at: img.created_at,
                     source: 'r2-storage'
-                });
-            }
+                };
+            });
 
             return {
                 results,
@@ -165,37 +207,46 @@ async function searchDirect(tags, page = 1, limit = 42) {
 
     console.log(`Found ${matchingIds.length} posts that have ALL tags: [${searchTags.join(', ')}]`);
 
-    // Search through all batches to find matching items
+    // Parallel batch loading for maximum speed
     const allMatchingItems = [];
-    let batchesSearched = 0;
-    const maxBatchesToSearch = 20; // Limit to avoid timeouts
+    const maxBatchesToSearch = Math.min(10, 60); // Reduced from 20 to 10 for faster response
+    const batchesToLoad = [];
 
-    for (let batchNum = 1; batchNum <= maxBatchesToSearch && batchesSearched < maxBatchesToSearch; batchNum++) {
-        try {
-            console.log(`Searching batch ${batchNum} for matching items...`);
-            const batchResponse = await fetch(`${R2_BASE_URL}/indices/items/batch-${String(batchNum).padStart(3, '0')}.json`, {
-                signal: AbortSignal.timeout(10000)
-            });
+    // Prepare batches to load in parallel
+    for (let batchNum = 1; batchNum <= maxBatchesToSearch; batchNum++) {
+        batchesToLoad.push(loadBatch(batchNum));
+    }
 
-            if (batchResponse.ok) {
-                const batch = await batchResponse.json();
+    try {
+        console.log(`Loading ${maxBatchesToSearch} batches in parallel...`);
+        const batchResults = await Promise.allSettled(batchesToLoad);
+        let batchesSearched = 0;
+
+        for (let i = 0; i < batchResults.length; i++) {
+            const result = batchResults[i];
+            if (result.status === 'fulfilled' && result.value) {
+                const batch = result.value;
                 batchesSearched++;
 
                 // Find items in this batch that match our IDs
                 const batchMatches = batch.items.filter(item => matchingIds.includes(item.id));
                 allMatchingItems.push(...batchMatches);
 
-                console.log(`Batch ${batchNum}: found ${batchMatches.length} matching items (total: ${allMatchingItems.length})`);
-
-                // Stop early if we have enough results
-                if (allMatchingItems.length >= limit * 2) {
-                    console.log(`Found sufficient results, stopping search`);
-                    break;
-                }
+                console.log(`Batch ${i + 1}: found ${batchMatches.length} matching items (total: ${allMatchingItems.length})`);
+            } else {
+                console.log(`Batch ${i + 1}: failed to load`);
             }
-        } catch (error) {
-            console.log(`Error loading batch ${batchNum}: ${error.message}`);
+
+            // Stop early if we have enough results
+            if (allMatchingItems.length >= limit * 3) {
+                console.log(`Found sufficient results, stopping early`);
+                break;
+            }
         }
+
+        console.log(`Searched ${batchesSearched} batches in parallel`);
+    } catch (error) {
+        console.error('Error in parallel batch loading:', error);
     }
 
     // Sort by score (highest first)
@@ -205,16 +256,12 @@ async function searchDirect(tags, page = 1, limit = 42) {
     const start = (page - 1) * limit;
     const paginatedResults = allMatchingItems.slice(start, start + limit);
 
-    // Create results with proper file extension detection
-    const results = [];
-    for (const img of paginatedResults) {
+    // Create results without file extension detection (for speed)
+    const results = paginatedResults.map(img => {
         const imageId = img.id.replace('_metadata', '');
+        const fileExtension = img.file_url.split('.').pop(); // Use metadata extension for speed
 
-        // Try to get actual file extension from R2
-        const actualExt = await getActualFileExtension(imageId);
-        const fileExtension = actualExt || img.file_url.split('.').pop();
-
-        results.push({
+        return {
             id: img.id,
             file_url: `${R2_BASE_URL}/images/historical_${imageId}.${fileExtension}`,
             preview_url: `${R2_BASE_URL}/thumbnails/historical_${imageId}_thumbnail.${img.thumbnail_url.split('.').pop()}`,
@@ -226,8 +273,8 @@ async function searchDirect(tags, page = 1, limit = 42) {
             score: img.score || 0,
             created_at: img.created_at,
             source: 'r2-storage'
-        });
-    }
+        };
+    });
 
     console.log(`Returning ${results.length} results from ${batchesSearched} batches (total matches: ${allMatchingItems.length})`);
 
