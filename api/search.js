@@ -296,35 +296,92 @@ async function searchDirect(tags, page = 1, limit = 42) {
     console.log('=== SEARCH DEBUG ===');
     const queryLower = tags.toLowerCase().trim();
 
-    // PHASE 2: Smart Search Integration (Currently disabled for debugging)
-    // TODO: Fix FUNCTION_INVOCATION_FAILED error in smart search logic
-    // Issue: Smart search functions causing deployment failure
-    // Status: Core smart indexing complete, API integration needs debugging
-    /*
+    // PHASE 2: Smart Search Integration - MINIMAL TESTING VERSION
+    console.log('=== Smart Search Test ===');
     const searchTags = queryLower.split(/\s+/).filter(tag => tag.length > 0);
+
     if (searchTags.length === 1) {
-        console.log(`Attempting smart search for: "${searchTags[0]}"`);
+        const testTag = searchTags[0];
+        console.log(`Testing smart search for: "${testTag}"`);
+
         try {
-            const smartResult = await smartSearch([searchTags[0]], page, limit);
-            if (smartResult && smartResult.results.length > 0) {
-                console.log(`Smart search SUCCESS: ${smartResult.results.length} results in ${smartResult.searchTier} tier`);
-                return {
-                    posts: smartResult.results,
-                    total: smartResult.total,
-                    page: page,
-                    source: smartResult.source,
-                    searchTier: smartResult.searchTier,
-                    batchesSearched: smartResult.batchesSearched,
-                    message: `Results from ${smartResult.source} (${smartResult.searchTier} search)`
-                };
+            // Test if we can load the smart index
+            const indexResponse = await fetch(`${R2_BASE_URL}/indices/smart-indexing/tag_popularity_index.json`, {
+                signal: AbortSignal.timeout(5000)
+            });
+
+            if (indexResponse.ok) {
+                const indexData = await indexResponse.json();
+                console.log(`Smart index loaded: ${Object.keys(indexData).length} tags indexed`);
+
+                if (indexData[testTag]) {
+                    const tagData = indexData[testTag];
+                    console.log(`Tag found: ${tagData.total_results} results, ${tagData.batch_list.length} batches`);
+
+                    // Try to load just the first batch
+                    const firstBatch = tagData.batch_list[0];
+                    if (firstBatch) {
+                        console.log(`Testing batch loading: ${firstBatch}`);
+                        const batchResponse = await fetch(`${R2_BASE_URL}/indices/items/${firstBatch}.json`, {
+                            signal: AbortSignal.timeout(5000)
+                        });
+
+                        if (batchResponse.ok) {
+                            const batch = await batchResponse.json();
+                            console.log(`Batch loaded: ${batch.items ? batch.items.length : 0} items`);
+
+                            if (batch.items && batch.items.length > 0) {
+                                // Find matching items
+                                const matchingItems = batch.items.filter(item => {
+                                    const itemTags = item.tags || [];
+                                    return itemTags.includes(testTag);
+                                });
+
+                                console.log(`Found ${matchingItems.length} matching items`);
+
+                                if (matchingItems.length > 0) {
+                                    const results = matchingItems.slice(0, limit).map(img => {
+                                        const imageId = img.id.replace('_metadata', '');
+                                        const fileExtension = img.file_url.split('.').pop();
+
+                                        return {
+                                            id: img.id,
+                                            file_url: `${R2_BASE_URL}/images/historical_${imageId}.${fileExtension}`,
+                                            preview_url: `${R2_BASE_URL}/thumbnails/historical_${imageId}_thumbnail.${img.thumbnail_url.split('.').pop()}`,
+                                            large_file_url: `${R2_BASE_URL}/images/historical_${imageId}.${fileExtension}`,
+                                            thumbnailUrl: `${R2_BASE_URL}/thumbnails/historical_${imageId}_thumbnail.${img.thumbnail_url.split('.').pop()}`,
+                                            tag_string: (img.tags || []).join(' '),
+                                            tag_string_artist: img.artist || '',
+                                            rating: img.rating || 'safe',
+                                            score: img.score || 0,
+                                            created_at: img.created_at,
+                                            source: 'r2-storage-smart'
+                                        };
+                                    });
+
+                                    console.log(`SMART SEARCH SUCCESS: ${results.length} results from smart indexing`);
+                                    return {
+                                        posts: results,
+                                        total: matchingItems.length,
+                                        page: page,
+                                        source: 'smart-indexing',
+                                        searchTier: 'test',
+                                        message: `Smart indexing test successful`
+                                    };
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    console.log(`Tag "${testTag}" not found in smart index`);
+                }
             } else {
-                console.log('Smart search: No results found, falling back to regular search');
+                console.log('Failed to load smart index');
             }
         } catch (error) {
-            console.log('Smart search failed:', error.message);
+            console.log('Smart search test failed:', error.message);
         }
     }
-    */
 
     if (!queryLower) {
         // Return sample content for empty search
