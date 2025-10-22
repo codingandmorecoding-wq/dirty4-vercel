@@ -305,25 +305,29 @@ async function searchDirect(tags, page = 1, limit = 42) {
         console.log(`Testing smart search for: "${testTag}"`);
 
         try {
-            // Test if we can load the smart index
+            console.log('Attempting to load smart index...');
+            // Test if we can load the smart index with longer timeout
             const indexResponse = await fetch(`${R2_BASE_URL}/indices/smart-indexing/tag_popularity_index.json`, {
-                signal: AbortSignal.timeout(5000)
+                signal: AbortSignal.timeout(15000) // Increased timeout to 15 seconds
             });
 
+            console.log(`Smart index response status: ${indexResponse.status}`);
+
             if (indexResponse.ok) {
+                console.log('Smart index response OK, parsing JSON...');
                 const indexData = await indexResponse.json();
-                console.log(`Smart index loaded: ${Object.keys(indexData).length} tags indexed`);
+                console.log(`Smart index loaded successfully: ${Object.keys(indexData).length} tags indexed`);
 
                 if (indexData[testTag]) {
                     const tagData = indexData[testTag];
-                    console.log(`Tag found: ${tagData.total_results} results, ${tagData.batch_list.length} batches`);
+                    console.log(`Tag "${testTag}" found in smart index: ${tagData.total_results} results, ${tagData.batch_list.length} batches`);
 
                     // Try to load just the first batch
                     const firstBatch = tagData.batch_list[0];
                     if (firstBatch) {
                         console.log(`Testing batch loading: ${firstBatch}`);
                         const batchResponse = await fetch(`${R2_BASE_URL}/indices/items/${firstBatch}.json`, {
-                            signal: AbortSignal.timeout(5000)
+                            signal: AbortSignal.timeout(10000) // 10 seconds for batch
                         });
 
                         if (batchResponse.ok) {
@@ -379,7 +383,9 @@ async function searchDirect(tags, page = 1, limit = 42) {
                 console.log('Failed to load smart index');
             }
         } catch (error) {
-            console.log('Smart search test failed:', error.message);
+            console.log('Smart search test failed with error:', error.message);
+            console.log('Error type:', error.name);
+            console.log('Error stack:', error.stack);
         }
     }
 
