@@ -8,6 +8,13 @@ const R2_BASE_URL = 'https://pub-4362d916855b41209502ea1705f6d048.r2.dev';
 const tagChunkCache = new Map();
 // Cache for loaded batches
 const batchCache = new Map();
+// Smart indexing cache
+const smartIndexCache = {
+    tagPopularity: null,
+    tagAnalysis: null,
+    lastLoad: 0,
+    loadTimeout: 300000 // 5 minutes cache timeout
+};
 
 // Load specific tag chunk directly
 async function loadTagChunk(chunkName) {
@@ -74,6 +81,169 @@ async function loadBatch(batchNum) {
     return null;
 }
 
+// Load smart indexing data
+async function loadSmartIndex() {
+    const now = Date.now();
+
+    // Check if cache is still valid
+    if (smartIndexCache.tagPopularity && (now - smartIndexCache.lastLoad) < smartIndexCache.loadTimeout) {
+        console.log('Using cached smart index data');
+        return smartIndexCache;
+    }
+
+    console.log('Loading smart index data...');
+
+    try {
+        // Load tag popularity index
+        const tagResponse = await fetch(`${R2_BASE_URL}/indices/smart-indexing/tag_popularity_index.json`, {
+            signal: AbortSignal.timeout(10000)
+        });
+
+        if (tagResponse.ok) {
+            const tagData = await tagResponse.json();
+            smartIndexCache.tagPopularity = tagData;
+            smartIndexCache.lastLoad = now;
+            console.log(`Loaded smart index: ${Object.keys(tagData).length} tags indexed`);
+            return smartIndexCache;
+        }
+    } catch (error) {
+        console.error('Failed to load smart index:', error);
+    }
+
+    // Fallback: return cached data even if expired
+    if (smartIndexCache.tagPopularity) {
+        console.log('Using expired smart index cache');
+        return smartIndexCache;
+    }
+
+    return null;
+}
+
+// Determine search tier based on tag popularity
+function getSearchTier(tag, tagPopularity) {
+    if (!tagPopularity || !tagPopularity[tag]) {
+        return 'comprehensive'; // Default to comprehensive search
+    }
+
+    const count = tagPopularity[tag].total_results || 0;
+
+    if (count >= 1000) {
+        return 'instant'; // Pre-cached, very fast
+    } else if (count >= 100) {
+        return 'fast'; // Smart batch loading
+    } else {
+        return 'comprehensive'; // Full search
+    }
+}
+
+// Smart search using indices for popular tags
+async function smartSearch(tags, page = 1, limit = 42) {
+    const smartIndex = await loadSmartIndex();
+    if (!smartIndex || !smartIndex.tagPopularity) {
+        console.log('Smart index not available, falling back to regular search');
+        return null;
+    }
+
+    const tagPopularity = smartIndex.tagPopularity;
+
+    // For multi-tag searches, determine if we can use smart indexing
+    if (tags.length === 1) {
+        const tag = tags[0];
+        const tier = getSearchTier(tag, tagPopularity);
+
+        console.log(`Smart search for '${tag}' (${tier} tier)`);
+
+        if (tier === 'instant' || tier === 'fast') {
+            return await executeSmartSearch(tag, tagPopularity, page, limit);
+        }
+    }
+
+    // Fall back to regular search for complex queries
+    return null;
+}
+
+// Execute smart search for popular tags
+async function executeSmartSearch(tag, tagPopularity, page = 1, limit = 42) {
+    const tagData = tagPopularity[tag];
+    const batchList = tagData.batch_list || [];
+
+    console.log(`Smart search: ${tag} has ${tagData.total_results} results in ${batchList.length} batches`);
+
+    // Load batches in parallel (limit to reasonable number for performance)
+    const maxBatches = Math.min(batchList.length, 20);
+    const batchesToLoad = batchList.slice(0, maxBatches);
+
+    const batchPromises = batchesToLoad.map(batchName =>
+        fetch(`${R2_BASE_URL}/indices/items/${batchName}.json`, {
+            signal: AbortSignal.timeout(3000)
+        }).then(response => response.ok ? response.json() : null)
+        .catch(err => {
+            console.error(`Failed to load ${batchName}:`, err);
+            return null;
+        })
+    );
+
+    const batchResults = await Promise.allSettled(batchPromises);
+    const validBatches = batchResults
+        .filter(result => result.status === 'fulfilled' && result.value)
+        .map(result => result.value);
+
+    console.log(`Loaded ${validBatches.length}/${maxBatches} batches for smart search`);
+
+    // Collect matching items from all loaded batches
+    const allMatchingItems = [];
+
+    for (const batch of validBatches) {
+        if (!batch || !batch.items) continue;
+
+        const matchingItems = batch.items.filter(item => {
+            // Check if item has the target tag
+            const itemTags = item.tags || [];
+            const artist = item.artist || '';
+            return itemTags.includes(tag) || artist.toLowerCase() === tag.toLowerCase();
+        });
+
+        allMatchingItems.push(...matchingItems);
+    }
+
+    // Sort by score (highest first)
+    allMatchingItems.sort((a, b) => (b.score || 0) - (a.score || 0));
+
+    // Paginate results
+    const start = (page - 1) * limit;
+    const paginatedResults = allMatchingItems.slice(start, start + limit);
+
+    // Format results consistently with existing API
+    const results = paginatedResults.map(img => {
+        const imageId = img.id.replace('_metadata', '');
+        const fileExtension = img.file_url.split('.').pop();
+
+        return {
+            id: img.id,
+            file_url: `${R2_BASE_URL}/images/historical_${imageId}.${fileExtension}`,
+            preview_url: `${R2_BASE_URL}/thumbnails/historical_${imageId}_thumbnail.${img.thumbnail_url.split('.').pop()}`,
+            large_file_url: `${R2_BASE_URL}/images/historical_${imageId}.${fileExtension}`,
+            thumbnailUrl: `${R2_BASE_URL}/thumbnails/historical_${imageId}_thumbnail.${img.thumbnail_url.split('.').pop()}`,
+            tag_string: (img.tags || []).join(' '),
+            tag_string_artist: img.artist || '',
+            rating: img.rating || 'safe',
+            score: img.score || 0,
+            created_at: img.created_at,
+            source: 'r2-storage-smart'
+        };
+    });
+
+    console.log(`Smart search returning ${results.length} results from ${allMatchingItems.length} total matches`);
+
+    return {
+        results,
+        total: allMatchingItems.length,
+        source: 'smart-indexing',
+        searchTier: getSearchTier(tag, tagPopularity),
+        batchesSearched: validBatches.length
+    };
+}
+
 // Cache for detected extensions
 const extensionCache = new Map();
 
@@ -123,6 +293,27 @@ async function getActualFileExtension(imageId) {
 async function searchDirect(tags, page = 1, limit = 42) {
     console.log('=== SEARCH DEBUG ===');
     const queryLower = tags.toLowerCase().trim();
+
+    // Try smart search first for popular tags
+    const searchTags = queryLower.split(/\s+/).filter(tag => tag.length > 0);
+    if (searchTags.length === 1) {
+        // Single tag search - try smart indexing first
+        const smartResult = await smartSearch([searchTags[0]], page, limit);
+        if (smartResult && smartResult.results.length > 0) {
+            console.log(`Smart search successful: ${smartResult.results.length} results in ${smartResult.searchTier} tier`);
+            return {
+                posts: smartResult.results,
+                total: smartResult.total,
+                page: page,
+                source: smartResult.source,
+                searchTier: smartResult.searchTier,
+                batchesSearched: smartResult.batchesSearched,
+                message: `Results from ${smartResult.source} (${smartResult.searchTier} search)`
+            };
+        } else {
+            console.log('Smart search failed or returned no results, falling back to regular search');
+        }
+    }
 
     if (!queryLower) {
         // Return sample content for empty search
