@@ -48,6 +48,30 @@ async function loadSampleBatch() {
     return null;
 }
 
+// Get actual file extension from R2 instead of metadata
+async function getActualFileExtension(imageId) {
+    try {
+        // Common image/video extensions to try
+        const extensions = ['jpg', 'png', 'gif', 'webp', 'mp4', 'webm'];
+
+        for (const ext of extensions) {
+            const testUrl = `${R2_BASE_URL}/images/historical_${imageId}.${ext}`;
+            const response = await fetch(testUrl, { method: 'HEAD', signal: AbortSignal.timeout(2000) });
+            if (response.ok) {
+                console.log(`Found actual extension for ${imageId}: .${ext}`);
+                return ext;
+            }
+        }
+
+        // Fallback to metadata extension if can't determine
+        console.log(`Could not determine actual extension for ${imageId}, will use metadata fallback`);
+        return null;
+    } catch (error) {
+        console.log(`Error checking extension for ${imageId}: ${error.message}`);
+        return null;
+    }
+}
+
 // Search using direct chunk access
 async function searchDirect(tags, page = 1, limit = 42) {
     const queryLower = tags.toLowerCase().trim();
@@ -56,19 +80,31 @@ async function searchDirect(tags, page = 1, limit = 42) {
         // Return sample content for empty search
         const sampleBatch = await loadSampleBatch();
         if (sampleBatch) {
-            const results = sampleBatch.items.slice(0, limit).map(img => ({
-                id: img.id,
-                file_url: `${R2_BASE_URL}/images/historical_${img.id.replace('_metadata', '')}.${img.file_url.split('.').pop()}`,
-                preview_url: `${R2_BASE_URL}/thumbnails/historical_${img.id.replace('_metadata', '')}_thumbnail.${img.thumbnail_url.split('.').pop()}`,
-                large_file_url: `${R2_BASE_URL}/images/historical_${img.id.replace('_metadata', '')}.${img.file_url.split('.').pop()}`,
-                thumbnailUrl: `${R2_BASE_URL}/thumbnails/historical_${img.id.replace('_metadata', '')}_thumbnail.${img.thumbnail_url.split('.').pop()}`,
-                tag_string: (img.tags || []).join(' '),
-                tag_string_artist: img.artist || '',
-                rating: img.rating || 'safe',
-                score: img.score || 0,
-                created_at: img.created_at,
-                source: 'r2-storage'
-            }));
+            // Create results with proper file extension detection
+            const results = [];
+            const sampleItems = sampleBatch.items.slice(0, limit);
+
+            for (const img of sampleItems) {
+                const imageId = img.id.replace('_metadata', '');
+
+                // Try to get actual file extension from R2
+                const actualExt = await getActualFileExtension(imageId);
+                const fileExtension = actualExt || img.file_url.split('.').pop();
+
+                results.push({
+                    id: img.id,
+                    file_url: `${R2_BASE_URL}/images/historical_${imageId}.${fileExtension}`,
+                    preview_url: `${R2_BASE_URL}/thumbnails/historical_${imageId}_thumbnail.${img.thumbnail_url.split('.').pop()}`,
+                    large_file_url: `${R2_BASE_URL}/images/historical_${imageId}.${fileExtension}`,
+                    thumbnailUrl: `${R2_BASE_URL}/thumbnails/historical_${imageId}_thumbnail.${img.thumbnail_url.split('.').pop()}`,
+                    tag_string: (img.tags || []).join(' '),
+                    tag_string_artist: img.artist || '',
+                    rating: img.rating || 'safe',
+                    score: img.score || 0,
+                    created_at: img.created_at,
+                    source: 'r2-storage'
+                });
+            }
 
             return {
                 results,
@@ -169,19 +205,29 @@ async function searchDirect(tags, page = 1, limit = 42) {
     const start = (page - 1) * limit;
     const paginatedResults = allMatchingItems.slice(start, start + limit);
 
-    const results = paginatedResults.map(img => ({
-        id: img.id,
-        file_url: `${R2_BASE_URL}/images/historical_${img.id.replace('_metadata', '')}.${img.file_url.split('.').pop()}`,
-        preview_url: `${R2_BASE_URL}/thumbnails/historical_${img.id.replace('_metadata', '')}_thumbnail.${img.thumbnail_url.split('.').pop()}`,
-        large_file_url: `${R2_BASE_URL}/images/historical_${img.id.replace('_metadata', '')}.${img.file_url.split('.').pop()}`,
-        thumbnailUrl: `${R2_BASE_URL}/thumbnails/historical_${img.id.replace('_metadata', '')}_thumbnail.${img.thumbnail_url.split('.').pop()}`,
-        tag_string: (img.tags || []).join(' '),
-        tag_string_artist: img.artist || '',
-        rating: img.rating || 'safe',
-        score: img.score || 0,
-        created_at: img.created_at,
-        source: 'r2-storage'
-    }));
+    // Create results with proper file extension detection
+    const results = [];
+    for (const img of paginatedResults) {
+        const imageId = img.id.replace('_metadata', '');
+
+        // Try to get actual file extension from R2
+        const actualExt = await getActualFileExtension(imageId);
+        const fileExtension = actualExt || img.file_url.split('.').pop();
+
+        results.push({
+            id: img.id,
+            file_url: `${R2_BASE_URL}/images/historical_${imageId}.${fileExtension}`,
+            preview_url: `${R2_BASE_URL}/thumbnails/historical_${imageId}_thumbnail.${img.thumbnail_url.split('.').pop()}`,
+            large_file_url: `${R2_BASE_URL}/images/historical_${imageId}.${fileExtension}`,
+            thumbnailUrl: `${R2_BASE_URL}/thumbnails/historical_${imageId}_thumbnail.${img.thumbnail_url.split('.').pop()}`,
+            tag_string: (img.tags || []).join(' '),
+            tag_string_artist: img.artist || '',
+            rating: img.rating || 'safe',
+            score: img.score || 0,
+            created_at: img.created_at,
+            source: 'r2-storage'
+        });
+    }
 
     console.log(`Returning ${results.length} results from ${batchesSearched} batches (total matches: ${allMatchingItems.length})`);
 
