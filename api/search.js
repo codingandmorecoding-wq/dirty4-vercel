@@ -58,10 +58,10 @@ async function searchDirect(tags, page = 1, limit = 42) {
         if (sampleBatch) {
             const results = sampleBatch.items.slice(0, limit).map(img => ({
                 id: img.id,
-                file_url: `${R2_BASE_URL}/${img.file_url}`,
-                preview_url: `${R2_BASE_URL}/${img.thumbnail_url}`,
-                large_file_url: `${R2_BASE_URL}/${img.file_url}`,
-                thumbnailUrl: `${R2_BASE_URL}/${img.thumbnail_url}`,
+                file_url: `${R2_BASE_URL}/images/historical_${img.id.replace('_metadata', '')}.${img.file_url.split('.').pop()}`,
+                preview_url: `${R2_BASE_URL}/thumbnails/historical_${img.id.replace('_metadata', '')}.${img.thumbnail_url.split('.').pop()}`,
+                large_file_url: `${R2_BASE_URL}/images/historical_${img.id.replace('_metadata', '')}.${img.file_url.split('.').pop()}`,
+                thumbnailUrl: `${R2_BASE_URL}/thumbnails/historical_${img.id.replace('_metadata', '')}.${img.thumbnail_url.split('.').pop()}`,
                 tag_string: (img.tags || []).join(' '),
                 tag_string_artist: img.artist || '',
                 rating: img.rating || 'safe',
@@ -123,10 +123,10 @@ async function searchDirect(tags, page = 1, limit = 42) {
         .slice(0, limit)
         .map(img => ({
             id: img.id,
-            file_url: `${R2_BASE_URL}/${img.file_url}`,
-            preview_url: `${R2_BASE_URL}/${img.thumbnail_url}`,
-            large_file_url: `${R2_BASE_URL}/${img.file_url}`,
-            thumbnailUrl: `${R2_BASE_URL}/${img.thumbnail_url}`,
+            file_url: `${R2_BASE_URL}/images/historical_${img.id.replace('_metadata', '')}.${img.file_url.split('.').pop()}`,
+            preview_url: `${R2_BASE_URL}/thumbnails/historical_${img.id.replace('_metadata', '')}.${img.thumbnail_url.split('.').pop()}`,
+            large_file_url: `${R2_BASE_URL}/images/historical_${img.id.replace('_metadata', '')}.${img.file_url.split('.').pop()}`,
+            thumbnailUrl: `${R2_BASE_URL}/thumbnails/historical_${img.id.replace('_metadata', '')}.${img.thumbnail_url.split('.').pop()}`,
             tag_string: (img.tags || []).join(' '),
             tag_string_artist: img.artist || '',
             rating: img.rating || 'safe',
