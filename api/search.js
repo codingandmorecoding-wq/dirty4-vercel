@@ -296,7 +296,7 @@ async function searchDirect(tags, page = 1, limit = 42) {
     console.log('=== SEARCH DEBUG ===');
     const queryLower = tags.toLowerCase().trim();
 
-    // PHASE 2: Smart Search Integration - MINIMAL TESTING VERSION
+    // PHASE 2: Smart Search Integration - SIMPLIFIED TEST VERSION
     console.log('=== Smart Search Test ===');
     const searchTags = queryLower.split(/\s+/).filter(tag => tag.length > 0);
 
@@ -305,87 +305,48 @@ async function searchDirect(tags, page = 1, limit = 42) {
         console.log(`Testing smart search for: "${testTag}"`);
 
         try {
-            console.log('Attempting to load smart index...');
-            // Test if we can load the smart index with longer timeout
-            const indexResponse = await fetch(`${R2_BASE_URL}/indices/smart-indexing/tag_popularity_index.json`, {
-                signal: AbortSignal.timeout(15000) // Increased timeout to 15 seconds
+            // Simplified test - just try to fetch a small part of the smart index
+            console.log('Testing smart index accessibility...');
+
+            const indexTestResponse = await fetch(`${R2_BASE_URL}/indices/smart-indexing/tag_popularity_index.json`, {
+                headers: { 'Range': 'bytes=0-1024' } // Only fetch first 1KB for testing
             });
 
-            console.log(`Smart index response status: ${indexResponse.status}`);
+            console.log(`Smart index test response status: ${indexTestResponse.status}`);
 
-            if (indexResponse.ok) {
-                console.log('Smart index response OK, parsing JSON...');
-                const indexData = await indexResponse.json();
-                console.log(`Smart index loaded successfully: ${Object.keys(indexData).length} tags indexed`);
+            if (indexTestResponse.ok || indexTestResponse.status === 206) {
+                console.log('Smart index is accessible! Attempting full test...');
 
-                if (indexData[testTag]) {
-                    const tagData = indexData[testTag];
-                    console.log(`Tag "${testTag}" found in smart index: ${tagData.total_results} results, ${tagData.batch_list.length} batches`);
+                // Now try the full test with a very simple approach
+                const fullIndexResponse = await fetch(`${R2_BASE_URL}/indices/smart-indexing/tag_popularity_index.json`);
 
-                    // Try to load just the first batch
-                    const firstBatch = tagData.batch_list[0];
-                    if (firstBatch) {
-                        console.log(`Testing batch loading: ${firstBatch}`);
-                        const batchResponse = await fetch(`${R2_BASE_URL}/indices/items/${firstBatch}.json`, {
-                            signal: AbortSignal.timeout(10000) // 10 seconds for batch
-                        });
+                if (fullIndexResponse.ok) {
+                    const indexData = await fullIndexResponse.json();
+                    console.log(`Smart index loaded: ${Object.keys(indexData).length} tags`);
 
-                        if (batchResponse.ok) {
-                            const batch = await batchResponse.json();
-                            console.log(`Batch loaded: ${batch.items ? batch.items.length : 0} items`);
+                    if (indexData[testTag]) {
+                        console.log(`Tag "${testTag}" found in smart index!`);
+                        console.log(`Total results: ${indexData[testTag].total_results}`);
 
-                            if (batch.items && batch.items.length > 0) {
-                                // Find matching items
-                                const matchingItems = batch.items.filter(item => {
-                                    const itemTags = item.tags || [];
-                                    return itemTags.includes(testTag);
-                                });
-
-                                console.log(`Found ${matchingItems.length} matching items`);
-
-                                if (matchingItems.length > 0) {
-                                    const results = matchingItems.slice(0, limit).map(img => {
-                                        const imageId = img.id.replace('_metadata', '');
-                                        const fileExtension = img.file_url.split('.').pop();
-
-                                        return {
-                                            id: img.id,
-                                            file_url: `${R2_BASE_URL}/images/historical_${imageId}.${fileExtension}`,
-                                            preview_url: `${R2_BASE_URL}/thumbnails/historical_${imageId}_thumbnail.${img.thumbnail_url.split('.').pop()}`,
-                                            large_file_url: `${R2_BASE_URL}/images/historical_${imageId}.${fileExtension}`,
-                                            thumbnailUrl: `${R2_BASE_URL}/thumbnails/historical_${imageId}_thumbnail.${img.thumbnail_url.split('.').pop()}`,
-                                            tag_string: (img.tags || []).join(' '),
-                                            tag_string_artist: img.artist || '',
-                                            rating: img.rating || 'safe',
-                                            score: img.score || 0,
-                                            created_at: img.created_at,
-                                            source: 'r2-storage-smart'
-                                        };
-                                    });
-
-                                    console.log(`SMART SEARCH SUCCESS: ${results.length} results from smart indexing`);
-                                    return {
-                                        posts: results,
-                                        total: matchingItems.length,
-                                        page: page,
-                                        source: 'smart-indexing',
-                                        searchTier: 'test',
-                                        message: `Smart indexing test successful`
-                                    };
-                                }
-                            }
-                        }
+                        // For now, just return success without loading batches
+                        return {
+                            posts: [],
+                            total: indexData[testTag].total_results,
+                            page: page,
+                            source: 'smart-indexing-test',
+                            message: `Smart index test successful - found ${indexData[testTag].total_results} results for "${testTag}"`
+                        };
+                    } else {
+                        console.log(`Tag "${testTag}" not found in smart index`);
                     }
                 } else {
-                    console.log(`Tag "${testTag}" not found in smart index`);
+                    console.log('Failed to load full smart index');
                 }
             } else {
-                console.log('Failed to load smart index');
+                console.log('Smart index not accessible');
             }
         } catch (error) {
-            console.log('Smart search test failed with error:', error.message);
-            console.log('Error type:', error.name);
-            console.log('Error stack:', error.stack);
+            console.log('Smart search test failed:', error.message);
         }
     }
 
