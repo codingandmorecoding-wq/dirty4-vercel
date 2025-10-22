@@ -211,6 +211,7 @@ async function searchDirect(tags, page = 1, limit = 42) {
     const allMatchingItems = [];
     const maxBatchesToSearch = Math.min(10, 60); // Reduced from 20 to 10 for faster response
     const batchesToLoad = [];
+    let batchesSearched = 0;
 
     // Prepare batches to load in parallel
     for (let batchNum = 1; batchNum <= maxBatchesToSearch; batchNum++) {
@@ -220,7 +221,6 @@ async function searchDirect(tags, page = 1, limit = 42) {
     try {
         console.log(`Loading ${maxBatchesToSearch} batches in parallel...`);
         const batchResults = await Promise.allSettled(batchesToLoad);
-        let batchesSearched = 0;
 
         for (let i = 0; i < batchResults.length; i++) {
             const result = batchResults[i];
