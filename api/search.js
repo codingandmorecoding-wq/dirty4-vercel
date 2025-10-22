@@ -208,44 +208,68 @@ async function searchDirect(tags, page = 1, limit = 42) {
 
     console.log(`Found ${matchingIds.length} posts that have ALL tags: [${searchTags.join(', ')}]`);
 
-    // Parallel batch loading for maximum speed
+    // Smart batch loading: search all batches but optimize for speed and pagination
     const allMatchingItems = [];
-    const maxBatchesToSearch = Math.min(10, 60); // Reduced from 20 to 10 for faster response
-    const batchesToLoad = [];
+    const totalBatches = 60; // Search all batches for complete results
     let batchesSearched = 0;
 
-    // Prepare batches to load in parallel
-    for (let batchNum = 1; batchNum <= maxBatchesToSearch; batchNum++) {
-        batchesToLoad.push(loadBatch(batchNum));
+    // Determine search scope based on query popularity and results
+    let batchesToSearch = 20; // Default
+    if (matchingIds.length > 500) {
+        batchesToSearch = 40; // Search more batches for popular tags
+    }
+    if (matchingIds.length > 1000) {
+        batchesToSearch = 60; // Search all batches for very popular tags
     }
 
+    // Calculate which batches we need to search based on pagination
+    const startBatch = 1; // Always start from beginning for complete results
+    const endBatch = Math.min(startBatch + batchesToSearch - 1, totalBatches);
+
+    console.log(`Searching batches ${startBatch} to ${endBatch} for page ${page}`);
+
     try {
-        console.log(`Loading ${maxBatchesToSearch} batches in parallel...`);
-        const batchResults = await Promise.allSettled(batchesToLoad);
+        // Load batches in parallel chunks for speed
+        for (let chunkStart = startBatch; chunkStart <= endBatch; chunkStart += 10) {
+            const chunkEnd = Math.min(chunkStart + 9, endBatch);
+            const batchPromises = [];
 
-        for (let i = 0; i < batchResults.length; i++) {
-            const result = batchResults[i];
-            if (result.status === 'fulfilled' && result.value) {
-                const batch = result.value;
-                batchesSearched++;
-
-                // Find items in this batch that match our IDs
-                const batchMatches = batch.items.filter(item => matchingIds.includes(item.id));
-                allMatchingItems.push(...batchMatches);
-
-                console.log(`Batch ${i + 1}: found ${batchMatches.length} matching items (total: ${allMatchingItems.length})`);
-            } else {
-                console.log(`Batch ${i + 1}: failed to load`);
+            // Prepare 10 batches to load in parallel
+            for (let batchNum = chunkStart; batchNum <= chunkEnd; batchNum++) {
+                batchPromises.push(loadBatch(batchNum));
             }
 
-            // Stop early if we have enough results
-            if (allMatchingItems.length >= limit * 3) {
-                console.log(`Found sufficient results, stopping early`);
+            console.log(`Loading batches ${chunkStart}-${chunkEnd} in parallel...`);
+            const batchResults = await Promise.allSettled(batchPromises);
+
+            // Process results from this chunk
+            for (let i = 0; i < batchResults.length; i++) {
+                const result = batchResults[i];
+                const batchNum = chunkStart + i;
+
+                if (result.status === 'fulfilled' && result.value) {
+                    const batch = result.value;
+                    batchesSearched++;
+
+                    // Find items in this batch that match our IDs
+                    const batchMatches = batch.items.filter(item => matchingIds.includes(item.id));
+                    allMatchingItems.push(...batchMatches);
+
+                    console.log(`Batch ${batchNum}: found ${batchMatches.length} matching items (total: ${allMatchingItems.length})`);
+                } else {
+                    console.log(`Batch ${batchNum}: failed to load`);
+                }
+            }
+
+            // Early exit if we have enough results for current page
+            const neededForPage = page * limit;
+            if (allMatchingItems.length >= neededForPage) {
+                console.log(`Found sufficient results for page ${page}, stopping search`);
                 break;
             }
         }
 
-        console.log(`Searched ${batchesSearched} batches in parallel`);
+        console.log(`Searched ${batchesSearched} batches in parallel chunks`);
     } catch (error) {
         console.error('Error in parallel batch loading:', error);
     }
@@ -277,12 +301,17 @@ async function searchDirect(tags, page = 1, limit = 42) {
         };
     });
 
-    console.log(`Returning ${results.length} results from ${batchesSearched || 0} batches (total matches: ${allMatchingItems.length})`);
+    const hasMoreResults = batchesSearched < totalBatches && allMatchingItems.length < matchingIds.length;
+
+    console.log(`Returning ${results.length} results from ${batchesSearched || 0} batches (total matches: ${allMatchingItems.length}/${matchingIds.length})`);
 
     return {
         results,
         total: matchingIds.length,
-        source: 'r2-storage-direct'
+        source: 'r2-storage-direct',
+        hasMoreResults,
+        batchesSearched,
+        totalBatches: matchingIds.length
     };
 }
 
