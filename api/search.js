@@ -112,30 +112,61 @@ async function searchDirect(tags, page = 1, limit = 42) {
         return { results: [], total: 0, source: 'r2-storage' };
     }
 
-    // Load sample batch and find matching items
-    const sampleBatch = await loadSampleBatch();
-    if (!sampleBatch) {
-        return { results: [], total: matchingIds.length, source: 'r2-storage' };
+    // Search through all batches to find matching items
+    const allMatchingItems = [];
+    let batchesSearched = 0;
+    const maxBatchesToSearch = 20; // Limit to avoid timeouts
+
+    for (let batchNum = 1; batchNum <= maxBatchesToSearch && batchesSearched < maxBatchesToSearch; batchNum++) {
+        try {
+            console.log(`Searching batch ${batchNum} for matching items...`);
+            const batchResponse = await fetch(`${R2_BASE_URL}/indices/items/batch-${String(batchNum).padStart(3, '0')}.json`, {
+                signal: AbortSignal.timeout(10000)
+            });
+
+            if (batchResponse.ok) {
+                const batch = await batchResponse.json();
+                batchesSearched++;
+
+                // Find items in this batch that match our IDs
+                const batchMatches = batch.items.filter(item => matchingIds.includes(item.id));
+                allMatchingItems.push(...batchMatches);
+
+                console.log(`Batch ${batchNum}: found ${batchMatches.length} matching items (total: ${allMatchingItems.length})`);
+
+                // Stop early if we have enough results
+                if (allMatchingItems.length >= limit * 2) {
+                    console.log(`Found sufficient results, stopping search`);
+                    break;
+                }
+            }
+        } catch (error) {
+            console.log(`Error loading batch ${batchNum}: ${error.message}`);
+        }
     }
 
-    const results = sampleBatch.items
-        .filter(item => matchingIds.includes(item.id))
-        .slice(0, limit)
-        .map(img => ({
-            id: img.id,
-            file_url: `${R2_BASE_URL}/images/historical_${img.id.replace('_metadata', '')}.${img.file_url.split('.').pop()}`,
-            preview_url: `${R2_BASE_URL}/thumbnails/historical_${img.id.replace('_metadata', '')}_thumbnail.${img.thumbnail_url.split('.').pop()}`,
-            large_file_url: `${R2_BASE_URL}/images/historical_${img.id.replace('_metadata', '')}.${img.file_url.split('.').pop()}`,
-            thumbnailUrl: `${R2_BASE_URL}/thumbnails/historical_${img.id.replace('_metadata', '')}_thumbnail.${img.thumbnail_url.split('.').pop()}`,
-            tag_string: (img.tags || []).join(' '),
-            tag_string_artist: img.artist || '',
-            rating: img.rating || 'safe',
-            score: img.score || 0,
-            created_at: img.created_at,
-            source: 'r2-storage'
-        }));
+    // Sort by score (highest first)
+    allMatchingItems.sort((a, b) => (b.score || 0) - (a.score || 0));
 
-    console.log(`Returning ${results.length} results from sample batch (total matches: ${matchingIds.length})`);
+    // Paginate results
+    const start = (page - 1) * limit;
+    const paginatedResults = allMatchingItems.slice(start, start + limit);
+
+    const results = paginatedResults.map(img => ({
+        id: img.id,
+        file_url: `${R2_BASE_URL}/images/historical_${img.id.replace('_metadata', '')}.${img.file_url.split('.').pop()}`,
+        preview_url: `${R2_BASE_URL}/thumbnails/historical_${img.id.replace('_metadata', '')}_thumbnail.${img.thumbnail_url.split('.').pop()}`,
+        large_file_url: `${R2_BASE_URL}/images/historical_${img.id.replace('_metadata', '')}.${img.file_url.split('.').pop()}`,
+        thumbnailUrl: `${R2_BASE_URL}/thumbnails/historical_${img.id.replace('_metadata', '')}_thumbnail.${img.thumbnail_url.split('.').pop()}`,
+        tag_string: (img.tags || []).join(' '),
+        tag_string_artist: img.artist || '',
+        rating: img.rating || 'safe',
+        score: img.score || 0,
+        created_at: img.created_at,
+        source: 'r2-storage'
+    }));
+
+    console.log(`Returning ${results.length} results from ${batchesSearched} batches (total matches: ${allMatchingItems.length})`);
 
     return {
         results,
