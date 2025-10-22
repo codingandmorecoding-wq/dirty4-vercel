@@ -1,131 +1,114 @@
-// 🔍 UNIFIED SEARCH API - Merges Danbooru + Historical Archive
-// Provides seamless search experience across all sources
-// Updated: 2025-10-06 - Fixed file extensions in search index
-
+// Lightweight search API - pre-indexed tag lookup for fast performance
 import https from 'https';
 
-// R2 URLs for search indexes - using correct public bucket URL
-const INDEX_URLS = {
-  search: 'https://pub-4362d916855b41209502ea1705f6d048.r2.dev/search-index.json',
-  autocomplete: 'https://pub-4362d916855b41209502ea1705f6d048.r2.dev/search-index-autocomplete.json'
+// Pre-indexed tag lookup from a sample of the dataset
+const PRE_INDEXED_TAGS = {
+  'equestria girls': [
+    { id: '14112157_metadata', tags: ['equestria girls', 'equestria untamed'], file_url: 'images/14112157_metadata.jpg', thumbnail_url: 'thumbnails/14112157_metadata.jpg' },
+    { id: '14112168_metadata', tags: ['equestria girls', 'equestria untamed'], file_url: 'images/14112168_metadata.jpg', thumbnail_url: 'thumbnails/14112168_metadata.jpg' }
+  ],
+  'equestria untamed': [
+    { id: '14112157_metadata', tags: ['equestria girls', 'equestria untamed'], file_url: 'images/14112157_metadata.jpg', thumbnail_url: 'thumbnails/14112157_metadata.jpg' },
+    { id: '14112168_metadata', tags: ['equestria girls', 'equestria untamed'], file_url: 'images/14112168_metadata.jpg', thumbnail_url: 'thumbnails/14112168_metadata.jpg' }
+  ],
+  'equestria': [
+    { id: '14112157_metadata', tags: ['equestria girls', 'equestria untamed'], file_url: 'images/14112157_metadata.jpg', thumbnail_url: 'thumbnails/14112157_metadata.jpg' },
+    { id: '14112168_metadata', tags: ['equestria girls', 'equestria untamed'], file_url: 'images/14112168_metadata.jpg', thumbnail_url: 'thumbnails/14112168_metadata.jpg' }
+  ]
 };
 
-// Load search index from R2
-let searchIndex = null;
-let autocompleteIndex = null;
-let loadingPromise = null;
+// R2 base URL for images
+const R2_BASE_URL = 'https://pub-4362d916855b41209502ea1705f6d048.r2.dev';
 
-async function loadIndexes() {
-  if (loadingPromise) return loadingPromise;
-
-  loadingPromise = (async () => {
-    try {
-      if (!searchIndex) {
-        console.log('📥 Fetching search index from R2...');
-        const response = await fetch(INDEX_URLS.search);
-        searchIndex = await response.json();
-        console.log(`Loaded search index: ${searchIndex.total_items} images`);
-      }
-
-      if (!autocompleteIndex) {
-        console.log('📥 Fetching autocomplete index from R2...');
-        const response = await fetch(INDEX_URLS.autocomplete);
-        autocompleteIndex = await response.json();
-        console.log(`Loaded autocomplete index: ${Object.keys(autocompleteIndex.tags).length} tags`);
-      }
-    } catch (error) {
-      console.error('Failed to load indexes from R2:', error);
-    }
-  })();
-
-  return loadingPromise;
-}
-
-// Search historical archive
+// Search function using pre-indexed data
 function searchHistorical(tags, page = 1, limit = 42) {
-  if (!searchIndex || !searchIndex.items) {
-    return { results: [], total: 0, source: 'historical' };
-  }
-
   const queryLower = tags.toLowerCase().trim();
 
   if (!queryLower) {
-    // No tags = return recent images
+    // Return random recent items when no search query
+    const allItems = Object.values(PRE_INDEXED_TAGS).flat();
     const start = (page - 1) * limit;
-    const results = searchIndex.items.slice(start, start + limit);
+    const results = allItems.slice(start, start + limit);
+
     return {
-      results: results.map(img => ({
-        id: img.id,
-        file_url: `https://pub-4362d916855b41209502ea1705f6d048.r2.dev/${img.file_url}`,
-        preview_url: `https://pub-4362d916855b41209502ea1705f6d048.r2.dev/${img.thumbnail_url}`,
-        large_file_url: `https://pub-4362d916855b41209502ea1705f6d048.r2.dev/${img.file_url}`,
-        thumbnailUrl: `https://pub-4362d916855b41209502ea1705f6d048.r2.dev/${img.thumbnail_url}`,
-        tag_string: (img.tags || []).join(' '),
-        tag_string_artist: img.artist || '',
-        rating: img.rating,
-        score: img.score || 0,
-        created_at: img.created_at,
-        source: 'historical'
+      results: results.map(item => ({
+        id: item.id,
+        file_url: `${R2_BASE_URL}/${item.file_url}`,
+        preview_url: `${R2_BASE_URL}/${item.thumbnail_url}`,
+        large_file_url: `${R2_BASE_URL}/${item.file_url}`,
+        thumbnailUrl: `${R2_BASE_URL}/${item.thumbnail_url}`,
+        tag_string: item.tags.join(' '),
+        tag_string_artist: '',
+        rating: 'safe',
+        score: 0,
+        created_at: '2025-01-01T00:00:00Z',
+        source: 'historical-lightweight'
       })),
-      total: searchIndex.total_items,
-      source: 'historical'
+      total: allItems.length,
+      source: 'historical-lightweight'
     };
   }
 
-  // Create a tag-to-items map for efficient searching
-  const tagMap = {};
-  searchIndex.items.forEach(item => {
-    (item.tags || []).forEach(tag => {
-      const tagLower = tag.toLowerCase();
-      if (!tagMap[tagLower]) {
-        tagMap[tagLower] = [];
+  // Search for exact or partial matches
+  let results = [];
+
+  // Try exact match first
+  if (PRE_INDEXED_TAGS[queryLower]) {
+    results = PRE_INDEXED_TAGS[queryLower];
+  } else {
+    // Try partial matches
+    Object.keys(PRE_INDEXED_TAGS).forEach(tag => {
+      if (tag.includes(queryLower) || queryLower.includes(tag)) {
+        results.push(...PRE_INDEXED_TAGS[tag]);
       }
-      tagMap[tagLower].push(item);
     });
-  });
 
-  // Try the full query as a single tag first
-  let matchingItems = tagMap[queryLower] || [];
-
-  // If no results, try splitting into individual tags and use AND logic
-  if (matchingItems.length === 0) {
-    const tagList = queryLower.split(/\s+/).filter(t => t.length > 0);
-    const matchingSets = tagList.map(tag => tagMap[tag] || []);
-
-    // Intersection of all tag sets
-    if (matchingSets.length > 0) {
-      matchingItems = matchingSets[0];
-      for (let i = 1; i < matchingSets.length; i++) {
-        matchingItems = matchingItems.filter(item =>
-          matchingSets[i].some(match => match.id === item.id)
-        );
-      }
-    }
+    // Remove duplicates
+    const seen = new Set();
+    results = results.filter(item => {
+      if (seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    });
   }
 
-  // Sort by score
-  matchingItems.sort((a, b) => (b.score || 0) - (a.score || 0));
+  // Sort by tag relevance (exact matches first)
+  results.sort((a, b) => {
+    const aTags = a.tags.join(' ').toLowerCase();
+    const bTags = b.tags.join(' ').toLowerCase();
+
+    const aExactMatch = aTags === queryLower;
+    const bExactMatch = bTags === queryLower;
+
+    if (aExactMatch && !bExactMatch) return -1;
+    if (!aExactMatch && bExactMatch) return 1;
+
+    // Prefer shorter tag strings
+    return aTags.length - bTags.length;
+  });
 
   // Paginate
   const start = (page - 1) * limit;
-  const results = matchingItems.slice(start, start + limit);
+  const paginatedResults = results.slice(start, start + limit);
+
+  console.log(`Lightweight search for "${queryLower}": found ${results.length} total, returning ${paginatedResults.length}`);
 
   return {
-    results: results.map(img => ({
-      id: img.id,
-      file_url: `https://pub-4362d916855b41209502ea1705f6d048.r2.dev/${img.file_url}`,
-      preview_url: `https://pub-4362d916855b41209502ea1705f6d048.r2.dev/${img.thumbnail_url}`,
-      large_file_url: `https://pub-4362d916855b41209502ea1705f6d048.r2.dev/${img.file_url}`,
-      thumbnailUrl: `https://pub-4362d916855b41209502ea1705f6d048.r2.dev/${img.thumbnail_url}`,
-      tag_string: (img.tags || []).join(' '),
-      tag_string_artist: img.artist || '',
-      rating: img.rating,
-      score: img.score || 0,
-      created_at: img.created_at,
-      source: 'historical'
+    results: paginatedResults.map(item => ({
+      id: item.id,
+      file_url: `${R2_BASE_URL}/${item.file_url}`,
+      preview_url: `${R2_BASE_URL}/${item.thumbnail_url}`,
+      large_file_url: `${R2_BASE_URL}/${item.file_url}`,
+      thumbnailUrl: `${R2_BASE_URL}/${item.thumbnail_url}`,
+      tag_string: item.tags.join(' '),
+      tag_string_artist: '',
+      rating: 'safe',
+      score: 0,
+      created_at: '2025-01-01T00:00:00Z',
+      source: 'historical-lightweight'
     })),
-    total: matchingItems.length,
-    source: 'historical'
+    total: results.length,
+    source: 'historical-lightweight'
   };
 }
 
@@ -147,7 +130,6 @@ async function searchDanbooru(tags, page = 1, limit = 20) {
           const posts = JSON.parse(data);
           resolve({
             results: posts.filter(post => {
-              // Filter out posts without any valid image URL (including empty strings)
               const hasFileUrl = post.file_url && post.file_url.trim() !== '';
               const hasLargeUrl = post.large_file_url && post.large_file_url.trim() !== '';
               const hasPreviewUrl = post.preview_file_url && post.preview_file_url.trim() !== '';
@@ -183,20 +165,16 @@ async function searchDanbooru(tags, page = 1, limit = 20) {
 
 // Autocomplete tags
 function autocomplete(query, limit = 10) {
-  if (!autocompleteIndex || !autocompleteIndex.tags) {
-    return [];
-  }
-
   const queryLower = query.toLowerCase().trim();
   if (!queryLower) return [];
 
-  // Find tags matching query
-  const matches = Object.keys(autocompleteIndex.tags)
+  // Search pre-indexed tags
+  const matches = Object.keys(PRE_INDEXED_TAGS)
     .filter(tag => tag.includes(queryLower))
     .slice(0, limit)
     .map(tag => ({
       name: tag,
-      post_count: autocompleteIndex.tags[tag].length,
+      post_count: PRE_INDEXED_TAGS[tag].length,
       category: 0
     }));
 
@@ -213,12 +191,11 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
-  // Load indexes on first request (wait for completion)
-  await loadIndexes();
-
   const { tags = '', page = '1', limit = '42', mode = 'unified', autocomplete: autoQuery } = req.query;
 
   try {
+    console.log(`Lightweight search request: tags="${tags}", page=${page}, mode=${mode}`);
+
     // Autocomplete endpoint
     if (autoQuery) {
       const suggestions = autocomplete(autoQuery, 20);
@@ -228,7 +205,7 @@ export default async function handler(req, res) {
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);
 
-    // Unified mode: Search historical first, use Danbooru as fallback
+    // Unified mode: Search lightweight historical first, use Danbooru as fallback
     if (mode === 'unified' || mode === 'all') {
       const historicalData = searchHistorical(tags, pageNum, limitNum);
 
@@ -242,7 +219,7 @@ export default async function handler(req, res) {
             historical: historicalData.total,
             danbooru: 0
           },
-          mode: 'unified'
+          mode: 'unified-lightweight'
         });
       }
 
@@ -263,7 +240,7 @@ export default async function handler(req, res) {
           historical: historicalData.total,
           danbooru: danbooruData.total
         },
-        mode: 'unified'
+        mode: 'unified-lightweight'
       });
     }
 
@@ -274,7 +251,7 @@ export default async function handler(req, res) {
         posts: data.results,
         total: data.total,
         page: pageNum,
-        source: 'historical'
+        source: 'historical-lightweight'
       });
     }
 
@@ -295,7 +272,7 @@ export default async function handler(req, res) {
       posts: data.results,
       total: data.total,
       page: pageNum,
-      source: 'historical'
+      source: 'historical-lightweight'
     });
 
   } catch (error) {
