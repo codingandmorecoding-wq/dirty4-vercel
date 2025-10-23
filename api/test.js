@@ -11,7 +11,7 @@ export default function handler(req, res) {
     const { tags = '', page = '1', limit = '42', mode = 'unified' } = req.query;
 
     // If this is a search request, handle it as search
-    if (tags || req.url.includes('search')) {
+    if (tags && tags.length > 0) {
         try {
             console.log(`Search via test endpoint: tags="${tags}", page=${page}, mode=${mode}`);
 
