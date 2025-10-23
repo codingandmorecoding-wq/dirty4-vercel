@@ -16,6 +16,21 @@ const smartIndexCache = {
     loadTimeout: 300000 // 5 minutes cache timeout
 };
 
+// Timeout wrapper for fetch compatibility with serverless environment
+async function fetchWithTimeout(url, timeoutMs) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+        const response = await fetch(url, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        return response;
+    } catch (error) {
+        clearTimeout(timeoutId);
+        throw error;
+    }
+}
+
 // Load specific tag chunk directly
 async function loadTagChunk(chunkName) {
     if (tagChunkCache.has(chunkName)) {
@@ -162,88 +177,85 @@ async function smartSearch(tags, page = 1, limit = 42) {
     return null;
 }
 
-// Execute smart search for popular tags (Simplified and debugged)
+// Execute smart search for popular tags
 async function executeSmartSearch(tag, tagPopularity, page = 1, limit = 42) {
-    console.log(`Executing smart search for tag: "${tag}"`);
-
-    if (!tagPopularity || !tagPopularity[tag]) {
-        console.log(`Tag "${tag}" not found in smart index`);
-        return { results: [], total: 0, source: 'smart-indexing', searchTier: 'unknown', batchesSearched: 0 };
-    }
-
     const tagData = tagPopularity[tag];
     const batchList = tagData.batch_list || [];
 
-    console.log(`Tag data found: ${tagData.total_results} results in ${batchList.length} batches`);
+    console.log(`Smart search: ${tag} has ${tagData.total_results} results in ${batchList.length} batches`);
 
-    // Load just one batch first for testing
-    const testBatchName = batchList[0];
-    if (!testBatchName) {
-        console.log('No batches found for this tag');
-        return { results: [], total: 0, source: 'smart-indexing', searchTier: 'unknown', batchesSearched: 0 };
-    }
+    // Load batches in parallel (limit to reasonable number for performance)
+    const maxBatches = Math.min(batchList.length, 20);
+    const batchesToLoad = batchList.slice(0, maxBatches);
 
-    try {
-        console.log(`Loading test batch: ${testBatchName}`);
-        const response = await fetch(`${R2_BASE_URL}/indices/items/${testBatchName}.json`, {
-            signal: AbortSignal.timeout(5000)
-        });
+    const batchPromises = batchesToLoad.map(batchName =>
+        fetchWithTimeout(`${R2_BASE_URL}/indices/items/${batchName}.json`, 3000)
+            .then(response => response.ok ? response.json() : null)
+            .catch(err => {
+                console.error(`Failed to load ${batchName}:`, err);
+                return null;
+            })
+    );
 
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
+    const batchResults = await Promise.allSettled(batchPromises);
+    const validBatches = batchResults
+        .filter(result => result.status === 'fulfilled' && result.value)
+        .map(result => result.value);
 
-        const batch = await response.json();
-        console.log(`Batch loaded successfully: ${batch.items ? batch.items.length : 0} items`);
+    console.log(`Loaded ${validBatches.length}/${maxBatches} batches for smart search`);
 
-        if (!batch.items || batch.items.length === 0) {
-            return { results: [], total: 0, source: 'smart-indexing', searchTier: 'unknown', batchesSearched: 1 };
-        }
+    // Collect matching items from all loaded batches
+    const allMatchingItems = [];
 
-        // Find matching items
+    for (const batch of validBatches) {
+        if (!batch || !batch.items) continue;
+
         const matchingItems = batch.items.filter(item => {
+            // Check if item has the target tag
             const itemTags = item.tags || [];
             const artist = item.artist || '';
-            const tagMatch = itemTags.includes(tag);
-            const artistMatch = artist.toLowerCase() === tag.toLowerCase();
-            return tagMatch || artistMatch;
+            return itemTags.includes(tag) || artist.toLowerCase() === tag.toLowerCase();
         });
 
-        console.log(`Found ${matchingItems.length} matching items in test batch`);
+        allMatchingItems.push(...matchingItems);
+    }
 
-        // Return just a few results for testing
-        const results = matchingItems.slice(0, Math.min(limit, matchingItems.length)).map(img => {
-            const imageId = img.id.replace('_metadata', '');
-            const fileExtension = img.file_url.split('.').pop();
+    // Sort by score (highest first)
+    allMatchingItems.sort((a, b) => (b.score || 0) - (a.score || 0));
 
-            return {
-                id: img.id,
-                file_url: `${R2_BASE_URL}/images/historical_${imageId}.${fileExtension}`,
-                preview_url: `${R2_BASE_URL}/thumbnails/historical_${imageId}_thumbnail.${img.thumbnail_url.split('.').pop()}`,
-                large_file_url: `${R2_BASE_URL}/images/historical_${imageId}.${fileExtension}`,
-                thumbnailUrl: `${R2_BASE_URL}/thumbnails/historical_${imageId}_thumbnail.${img.thumbnail_url.split('.').pop()}`,
-                tag_string: (img.tags || []).join(' '),
-                tag_string_artist: img.artist || '',
-                rating: img.rating || 'safe',
-                score: img.score || 0,
-                created_at: img.created_at,
-                source: 'r2-storage-smart'
-            };
-        });
+    // Paginate results
+    const start = (page - 1) * limit;
+    const paginatedResults = allMatchingItems.slice(start, start + limit);
+
+    // Format results consistently with existing API
+    const results = paginatedResults.map(img => {
+        const imageId = img.id.replace('_metadata', '');
+        const fileExtension = img.file_url.split('.').pop();
 
         return {
-            results,
-            total: matchingItems.length,
-            source: 'smart-indexing',
-            searchTier: getSearchTier(tag, tagPopularity),
-            batchesSearched: 1,
-            note: 'Limited to first batch for testing'
+            id: img.id,
+            file_url: `${R2_BASE_URL}/images/historical_${imageId}.${fileExtension}`,
+            preview_url: `${R2_BASE_URL}/thumbnails/historical_${imageId}_thumbnail.${img.thumbnail_url.split('.').pop()}`,
+            large_file_url: `${R2_BASE_URL}/images/historical_${imageId}.${fileExtension}`,
+            thumbnailUrl: `${R2_BASE_URL}/thumbnails/historical_${imageId}_thumbnail.${img.thumbnail_url.split('.').pop()}`,
+            tag_string: (img.tags || []).join(' '),
+            tag_string_artist: img.artist || '',
+            rating: img.rating || 'safe',
+            score: img.score || 0,
+            created_at: img.created_at,
+            source: 'r2-storage-smart'
         };
+    });
 
-    } catch (error) {
-        console.error(`Smart search failed:`, error);
-        return { results: [], total: 0, source: 'smart-indexing-error', searchTier: 'error', batchesSearched: 0 };
-    }
+    console.log(`Smart search returning ${results.length} results from ${allMatchingItems.length} total matches`);
+
+    return {
+        results,
+        total: allMatchingItems.length,
+        source: 'smart-indexing',
+        searchTier: getSearchTier(tag, tagPopularity),
+        batchesSearched: validBatches.length
+    };
 }
 
 // Cache for detected extensions
@@ -296,7 +308,26 @@ async function searchDirect(tags, page = 1, limit = 42) {
     console.log('=== SEARCH DEBUG ===');
     const queryLower = tags.toLowerCase().trim();
 
-    // Smart search temporarily removed for debugging
+    // Try smart search first for popular tags
+    const searchTags = queryLower.split(/\s+/).filter(tag => tag.length > 0);
+    if (searchTags.length === 1) {
+        // Single tag search - try smart indexing first
+        const smartResult = await smartSearch([searchTags[0]], page, limit);
+        if (smartResult && smartResult.results.length > 0) {
+            console.log(`Smart search successful: ${smartResult.results.length} results in ${smartResult.searchTier} tier`);
+            return {
+                posts: smartResult.results,
+                total: smartResult.total,
+                page: page,
+                source: smartResult.source,
+                searchTier: smartResult.searchTier,
+                batchesSearched: smartResult.batchesSearched,
+                message: `Results from ${smartResult.source} (${smartResult.searchTier} search)`
+            };
+        } else {
+            console.log('Smart search failed or returned no results, falling back to regular search');
+        }
+    }
 
     if (!queryLower) {
         // Return sample content for empty search
