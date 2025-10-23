@@ -1,5 +1,4 @@
 export default function handler(req, res) {
-    // Set CORS headers
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -10,12 +9,8 @@ export default function handler(req, res) {
 
     const { tags = '', page = '1', limit = '42', mode = 'unified' } = req.query;
 
-    // ALWAYS return search response for testing
     return res.status(200).json({
-        message: 'Search working via test endpoint!',
-        method: req.method,
-        url: req.url,
-        query: req.query,
+        message: 'NEW working search endpoint!',
         tags: tags,
         page: page,
         limit: limit,
@@ -25,7 +20,6 @@ export default function handler(req, res) {
             id: 'test-123',
             file_url: 'https://pub-4362d916855b41209502ea1705f6d048.r2.dev/images/historical_14112546.jpg',
             preview_url: 'https://pub-4362d916855b41209502ea1705f6d048.r2.dev/thumbnails/historical_14112546_thumbnail.jpg',
-            large_file_url: 'https://pub-4362d916855b41209502ea1705f6d048.r2.dev/images/historical_14112546.jpg',
             thumbnailUrl: 'https://pub-4362d916855b41209502ea1705f6d048.r2.dev/thumbnails/historical_14112546_thumbnail.jpg',
             tag_string: 'test tag content here',
             tag_string_artist: 'test artist',
@@ -35,6 +29,6 @@ export default function handler(req, res) {
             source: 'test-search'
         }],
         total: 1,
-        source: 'test-endpoint-search'
+        source: 'new-working-endpoint'
     });
 }
