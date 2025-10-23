@@ -17,12 +17,12 @@ const smartIndexCache = {
 };
 
 // Timeout wrapper for fetch compatibility with serverless environment
-async function fetchWithTimeout(url, timeoutMs) {
+async function fetchWithTimeout(url, timeoutMs, options = {}) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-        const response = await fetch(url, { signal: controller.signal });
+        const response = await fetch(url, { signal: controller.signal, ...options });
         clearTimeout(timeoutId);
         return response;
     } catch (error) {
@@ -39,9 +39,7 @@ async function loadTagChunk(chunkName) {
 
     try {
         console.log(`Loading tag chunk: tags-${chunkName}`);
-        const response = await fetch(`${R2_BASE_URL}/indices/tags-splitted/tags-${chunkName}.json`, {
-            signal: AbortSignal.timeout(15000)
-        });
+        const response = await fetchWithTimeout(`${R2_BASE_URL}/indices/tags-splitted/tags-${chunkName}.json`, 15000);
 
         if (response.ok) {
             const chunkData = await response.json();
@@ -58,9 +56,7 @@ async function loadTagChunk(chunkName) {
 // Load sample batch for getting actual items
 async function loadSampleBatch() {
     try {
-        const response = await fetch(`${R2_BASE_URL}/indices/items/batch-001.json`, {
-            signal: AbortSignal.timeout(10000)
-        });
+        const response = await fetchWithTimeout(`${R2_BASE_URL}/indices/items/batch-001.json`, 10000);
         if (response.ok) {
             const batch = await response.json();
             console.log(`Loaded sample batch: ${batch.total_items} items`);
@@ -81,9 +77,7 @@ async function loadBatch(batchNum) {
     }
 
     try {
-        const response = await fetch(`${R2_BASE_URL}/indices/items/${batchKey}.json`, {
-            signal: AbortSignal.timeout(5000) // Reduced timeout
-        });
+        const response = await fetchWithTimeout(`${R2_BASE_URL}/indices/items/${batchKey}.json`, 5000);
 
         if (response.ok) {
             const batch = await response.json();
@@ -110,9 +104,7 @@ async function loadSmartIndex() {
 
     try {
         // Load tag popularity index
-        const tagResponse = await fetch(`${R2_BASE_URL}/indices/smart-indexing/tag_popularity_index.json`, {
-            signal: AbortSignal.timeout(10000)
-        });
+        const tagResponse = await fetchWithTimeout(`${R2_BASE_URL}/indices/smart-indexing/tag_popularity_index.json`, 10000);
 
         if (tagResponse.ok) {
             const tagData = await tagResponse.json();
@@ -270,7 +262,7 @@ async function getActualFileExtension(imageId) {
     try {
         // Just check if it's a video or image - faster than checking all extensions
         const testUrl = `${R2_BASE_URL}/images/historical_${imageId}.jpg`;
-        const response = await fetch(testUrl, { method: 'HEAD', signal: AbortSignal.timeout(500) });
+        const response = await fetchWithTimeout(testUrl, 500, { method: 'HEAD' });
 
         if (response.ok) {
             extensionCache.set(imageId, 'jpg');
@@ -278,7 +270,7 @@ async function getActualFileExtension(imageId) {
         } else {
             // Try video formats
             const mp4Url = `${R2_BASE_URL}/images/historical_${imageId}.mp4`;
-            const mp4Response = await fetch(mp4Url, { method: 'HEAD', signal: AbortSignal.timeout(500) });
+            const mp4Response = await fetchWithTimeout(mp4Url, 500, { method: 'HEAD' });
 
             if (mp4Response.ok) {
                 extensionCache.set(imageId, 'mp4');
@@ -286,7 +278,7 @@ async function getActualFileExtension(imageId) {
             } else {
                 // Try gif
                 const gifUrl = `${R2_BASE_URL}/images/historical_${imageId}.gif`;
-                const gifResponse = await fetch(gifUrl, { method: 'HEAD', signal: AbortSignal.timeout(500) });
+                const gifResponse = await fetchWithTimeout(gifUrl, 500, { method: 'HEAD' });
 
                 if (gifResponse.ok) {
                     extensionCache.set(imageId, 'gif');
