@@ -300,26 +300,10 @@ async function searchDirect(tags, page = 1, limit = 42) {
     console.log('=== SEARCH DEBUG ===');
     const queryLower = tags.toLowerCase().trim();
 
-    // Try smart search first for popular tags
+    // Smart search temporarily disabled for debugging
+    // TODO: Re-enable after fixing compatibility issues
+    console.log('Smart search temporarily disabled - using regular search');
     const searchTags = queryLower.split(/\s+/).filter(tag => tag.length > 0);
-    if (searchTags.length === 1) {
-        // Single tag search - try smart indexing first
-        const smartResult = await smartSearch([searchTags[0]], page, limit);
-        if (smartResult && smartResult.results.length > 0) {
-            console.log(`Smart search successful: ${smartResult.results.length} results in ${smartResult.searchTier} tier`);
-            return {
-                posts: smartResult.results,
-                total: smartResult.total,
-                page: page,
-                source: smartResult.source,
-                searchTier: smartResult.searchTier,
-                batchesSearched: smartResult.batchesSearched,
-                message: `Results from ${smartResult.source} (${smartResult.searchTier} search)`
-            };
-        } else {
-            console.log('Smart search failed or returned no results, falling back to regular search');
-        }
-    }
 
     if (!queryLower) {
         // Return sample content for empty search
