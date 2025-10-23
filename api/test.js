@@ -10,34 +10,22 @@ export default function handler(req, res) {
 
     const { tags = '', page = '1', limit = '42', mode = 'unified' } = req.query;
 
-    // If this is a search request, handle it as search
-    console.log('DEBUG: tags =', tags, 'length =', tags.length);
-    if (tags && tags.trim().length > 0) {
-        try {
-            console.log(`Search via test endpoint: tags="${tags}", page=${page}, mode=${mode}`);
-
-            return res.status(200).json({
-                message: 'Search working via test endpoint!',
-                method: req.method,
-                url: req.url,
-                query: req.query,
-                tags: tags,
-                page: page,
-                limit: limit,
-                mode: mode,
-                timestamp: new Date().toISOString(),
-                posts: [],
-                total: 0,
-                source: 'test-endpoint-search-workaround'
-            });
-
-        } catch (error) {
-            console.error('Search via test endpoint error:', error);
-            return res.status(500).json({
-                error: 'Search via test endpoint failed',
-                message: error.message
-            });
-        }
+    // Always check if tags are provided and return search response
+    if (tags && tags !== '') {
+        return res.status(200).json({
+            message: 'Search working via test endpoint!',
+            method: req.method,
+            url: req.url,
+            query: req.query,
+            tags: tags,
+            page: page,
+            limit: limit,
+            mode: mode,
+            timestamp: new Date().toISOString(),
+            posts: [],
+            total: 0,
+            source: 'test-endpoint-search-workaround'
+        });
     }
 
     // Regular test endpoint response
