@@ -1,8 +1,22 @@
 // Simplified Search API - Direct chunk access without manifest
-import https from 'https';
 
 // R2 base URL
 const R2_BASE_URL = 'https://pub-4362d916855b41209502ea1705f6d048.r2.dev';
+
+// Timeout wrapper for serverless compatibility
+async function fetchWithTimeout(url, timeoutMs, options = {}) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+        const response = await fetch(url, { signal: controller.signal, ...options });
+        clearTimeout(timeoutId);
+        return response;
+    } catch (error) {
+        clearTimeout(timeoutId);
+        throw error;
+    }
+}
 
 // Cache for loaded chunks
 const tagChunkCache = new Map();
@@ -15,9 +29,7 @@ async function loadTagChunk(chunkName) {
 
     try {
         console.log(`Loading tag chunk: tags-${chunkName}`);
-        const response = await fetch(`${R2_BASE_URL}/indices/tags-splitted/tags-${chunkName}.json`, {
-            signal: AbortSignal.timeout(15000)
-        });
+        const response = await fetchWithTimeout(`${R2_BASE_URL}/indices/tags-splitted/tags-${chunkName}.json`, 15000);
 
         if (response.ok) {
             const chunkData = await response.json();
@@ -34,9 +46,7 @@ async function loadTagChunk(chunkName) {
 // Load sample batch for getting actual items
 async function loadSampleBatch() {
     try {
-        const response = await fetch(`${R2_BASE_URL}/indices/items/batch-001.json`, {
-            signal: AbortSignal.timeout(10000)
-        });
+        const response = await fetchWithTimeout(`${R2_BASE_URL}/indices/items/batch-001.json`, 10000);
         if (response.ok) {
             const batch = await response.json();
             console.log(`Loaded sample batch: ${batch.total_items} items`);
@@ -137,9 +147,7 @@ async function searchDirect(tags, page = 1, limit = 42) {
     for (let batchNum = 1; batchNum <= maxBatchesToSearch && batchesSearched < maxBatchesToSearch; batchNum++) {
         try {
             console.log(`Searching batch ${batchNum} for matching items...`);
-            const batchResponse = await fetch(`${R2_BASE_URL}/indices/items/batch-${String(batchNum).padStart(3, '0')}.json`, {
-                signal: AbortSignal.timeout(10000)
-            });
+            const batchResponse = await fetchWithTimeout(`${R2_BASE_URL}/indices/items/batch-${String(batchNum).padStart(3, '0')}.json`, 10000);
 
             if (batchResponse.ok) {
                 const batch = await batchResponse.json();
