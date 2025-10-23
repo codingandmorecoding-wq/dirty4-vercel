@@ -4,6 +4,7 @@
 public/search-index.json
 public/search-index-autocomplete.json
 public/.wrangler/
+public/.wrangler/**/*
 
 # Dependencies
 node_modules/
