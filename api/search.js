@@ -1,5 +1,4 @@
 // Simplified Search API - Direct chunk access without manifest
-import https from 'https';
 
 // R2 base URL
 const R2_BASE_URL = 'https://pub-4362d916855b41209502ea1705f6d048.r2.dev';
