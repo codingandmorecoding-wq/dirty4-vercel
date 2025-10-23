@@ -296,10 +296,35 @@ async function searchDirect(tags, page = 1, limit = 42) {
     console.log('=== SEARCH DEBUG ===');
     const queryLower = tags.toLowerCase().trim();
 
-    // PHASE 2: Smart Search Integration - DISABLED FOR NOW
-    // The smart search test is causing server errors - need to debug the issue
-    // console.log('=== Smart Search Test ===');
-    // TODO: Fix smart search integration and re-enable
+    // PHASE 2: Smart Search Integration (Currently disabled for debugging)
+    // TODO: Fix FUNCTION_INVOCATION_FAILED error in smart search logic
+    // Issue: Smart search functions causing deployment failure
+    // Status: Core smart indexing complete, API integration needs debugging
+    /*
+    const searchTags = queryLower.split(/\s+/).filter(tag => tag.length > 0);
+    if (searchTags.length === 1) {
+        console.log(`Attempting smart search for: "${searchTags[0]}"`);
+        try {
+            const smartResult = await smartSearch([searchTags[0]], page, limit);
+            if (smartResult && smartResult.results.length > 0) {
+                console.log(`Smart search SUCCESS: ${smartResult.results.length} results in ${smartResult.searchTier} tier`);
+                return {
+                    posts: smartResult.results,
+                    total: smartResult.total,
+                    page: page,
+                    source: smartResult.source,
+                    searchTier: smartResult.searchTier,
+                    batchesSearched: smartResult.batchesSearched,
+                    message: `Results from ${smartResult.source} (${smartResult.searchTier} search)`
+                };
+            } else {
+                console.log('Smart search: No results found, falling back to regular search');
+            }
+        } catch (error) {
+            console.log('Smart search failed:', error.message);
+        }
+    }
+    */
 
     if (!queryLower) {
         // Return sample content for empty search
