@@ -10,8 +10,11 @@ export default function handler(req, res) {
 
     const { tags = '', page = '1', limit = '42', mode = 'unified' } = req.query;
 
+    // Debug what we're getting
+    console.log('DEBUG: tags =', tags, 'type =', typeof tags);
+
     // Test search logic - return search response for any request with tags
-    if (tags && tags.trim() !== '') {
+    if (tags) {
         return res.status(200).json({
             message: 'Search working via test endpoint!',
             method: req.method,
